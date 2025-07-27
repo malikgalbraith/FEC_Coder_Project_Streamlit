@@ -1,0 +1,11 @@
+streamlit>=1.39.0
+pandas>=2.2.0
+requests>=2.32.0
+openpyxl>=3.1.5
+python-dotenv>=1.0.1
+plotly>=5.0.0
+us>=3.0.0
+geopy>=2.3.0
+folium>=0.14.0
+streamlit-folium>=0.13.0
+branca>=0.6.0

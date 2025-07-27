@@ -1,0 +1,28 @@
+# Streamlit secrets - DO NOT COMMIT
+.streamlit/secrets.toml
+
+# Environment variables
+.env
+.env.local
+
+# API Key files
+API Key.rtf
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
