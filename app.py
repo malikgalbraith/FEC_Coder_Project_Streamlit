@@ -982,7 +982,6 @@ def create_us_state_choropleth(state_totals_df):
         ),
         coloraxis_colorbar=dict(
             title="Total Amount ($)",
-            titleside="right",
             tickformat="$,.0f"
         ),
         height=600,  # Increased height for better detail
@@ -1148,8 +1147,7 @@ def create_state_zip_map(zip_data_df, filer_state):
         title_x=0.5,
         height=600,  # Increased height for better detail
         coloraxis_colorbar=dict(
-            title="Contribution Amount ($)",
-            titleside="right"
+            title="Contribution Amount ($)"
         )
     )
     
