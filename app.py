@@ -991,6 +991,99 @@ def create_us_state_choropleth(state_totals_df):
     
     return fig
 
+def create_zip_choropleth(zip_data_df, state_code='CA', max_zips=500):
+    """Create ZIP code choropleth heatmap using ZCTA boundary data"""
+    if zip_data_df.empty:
+        fig = go.Figure()
+        fig.add_annotation(text="No ZIP code data available", 
+                          xref="paper", yref="paper", 
+                          x=0.5, y=0.5, showarrow=False,
+                          font=dict(size=16))
+        fig.update_layout(title=f"ZIP Code Contributions - {state_code}", title_x=0.5)
+        return fig
+    
+    # Clean and prepare data
+    df_clean = zip_data_df.copy()
+    df_clean['zip_code'] = df_clean['zip_code'].astype(str).str.strip().str.zfill(5)
+    
+    # Filter out invalid ZIP codes
+    df_clean = df_clean[df_clean['zip_code'].str.match(r'^\d{5}$')]
+    
+    # Limit data for performance
+    if len(df_clean) > max_zips:
+        df_clean = df_clean.nlargest(max_zips, 'total_amount')
+    
+    if df_clean.empty:
+        fig = go.Figure()
+        fig.add_annotation(text="No valid ZIP code data available", 
+                          xref="paper", yref="paper", 
+                          x=0.5, y=0.5, showarrow=False,
+                          font=dict(size=16))
+        fig.update_layout(title=f"ZIP Code Contributions - {state_code}", title_x=0.5)
+        return fig
+    
+    # State-specific file mapping and map centers
+    state_files = {
+        'CA': ('ca_california_zip_codes_geo.min.json', 37.0, -119.4, 5.5),
+        # Add more states as GeoJSON files become available
+    }
+    
+    if state_code.upper() not in state_files:
+        st.warning(f"ZIP boundary data not available for {state_code}. Showing scatter plot instead.")
+        return create_zip_map(zip_data_df, state_code)
+    
+    filename, center_lat, center_lon, zoom_level = state_files[state_code.upper()]
+    geojson_path = f"/Users/malikgalbraith/Desktop/Coding Folder/FEC_Coder_Project_Streamlit/Databases/{filename}"
+    
+    try:
+        import json
+        with open(geojson_path, 'r') as f:
+            geojson_data = json.load(f)
+    except FileNotFoundError:
+        # Fallback to scatter plot if GeoJSON not available
+        st.warning(f"ZIP boundary data not available for {state_code}. Showing scatter plot instead.")
+        return create_zip_map(zip_data_df, state_code)
+    
+    # Create hover text
+    df_clean['hover_text'] = (
+        'ZIP: ' + df_clean['zip_code'] + '<br>' +
+        'Contributors: ' + df_clean['contributor_count'].astype(str) + '<br>' +
+        'Amount: $' + df_clean['total_amount'].apply(lambda x: f"{x:,.2f}")
+    )
+    
+    # Create choropleth map using mapbox
+    fig = go.Figure(go.Choroplethmapbox(
+        geojson=geojson_data,
+        locations=df_clean['zip_code'],
+        z=df_clean['total_amount'],
+        featureidkey="properties.ZCTA5CE10",  # This is the ZIP code field in the GeoJSON
+        colorscale='Reds',
+        marker_opacity=0.7,
+        marker_line_width=0.5,
+        marker_line_color='white',
+        hovertemplate='<b>%{text}</b><extra></extra>',
+        text=df_clean['hover_text'],
+        colorbar=dict(
+            title="Total Amount ($)",
+            tickformat="$,.0f"
+        )
+    ))
+    
+    fig.update_layout(
+        title=f'Campaign Contributions by ZIP Code - {state_code}',
+        title_x=0.5,
+        mapbox_style="open-street-map",
+        mapbox=dict(
+            center=dict(lat=center_lat, lon=center_lon),
+            zoom=zoom_level
+        ),
+        height=600,
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)'
+    )
+    
+    return fig
+
 def get_zip_coordinates(zip_code):
     """Get latitude and longitude for a zip code using comprehensive database"""
     # Handle ZIP+4 format by truncating to 5 digits
@@ -1619,12 +1712,32 @@ def display_results(results):
                 with col2:
                     st.subheader(f"🏛️ {display_state} Geographic Detail" if display_state else "State Geographic Detail")
                     if not geographic_data['zip_data'].empty and display_state:
-                        # Create Folium map with built-in city labels and roads
-                        folium_map = create_folium_state_map(geographic_data['zip_data'], display_state)
-                        st_folium(folium_map, width=700, height=500)
+                        # Add map type selector
+                        map_type = st.radio(
+                            "Map Type:",
+                            ["Interactive Points", "ZIP Heatmap"],
+                            horizontal=True,
+                            help="Choose between point-based interactive map or ZIP code heatmap visualization"
+                        )
                         
-                        # Add info about the enhanced features
-                        st.caption("🗺️ Interactive map with built-in city labels, roads, and street networks")
+                        if map_type == "ZIP Heatmap":
+                            # Create ZIP code choropleth heatmap
+                            if display_state.upper() == 'CA':  # Only California supported for now
+                                zip_choropleth = create_zip_choropleth(geographic_data['zip_data'], display_state.upper())
+                                st.plotly_chart(zip_choropleth, use_container_width=True)
+                                st.caption("🔥 ZIP code contribution heatmap using Census boundary data")
+                            else:
+                                st.warning(f"ZIP heatmap not yet available for {display_state}. Only California (CA) is currently supported.")
+                                # Fallback to regular scatter plot
+                                zip_map = create_zip_map(geographic_data['zip_data'], display_state)
+                                st.plotly_chart(zip_map, use_container_width=True)
+                        else:
+                            # Create Folium map with built-in city labels and roads
+                            folium_map = create_folium_state_map(geographic_data['zip_data'], display_state)
+                            st_folium(folium_map, width=700, height=500)
+                            
+                            # Add info about the enhanced features
+                            st.caption("🗺️ Interactive map with built-in city labels, roads, and street networks")
                     elif not geographic_data['zip_data'].empty:
                         st.info("💡 Tip: Enter a focus state above to see ZIP code detail map")
                     else:
