@@ -1030,10 +1030,10 @@ def create_zip_choropleth(zip_data_df, state_code='CA', max_zips=500):
     
     if state_code.upper() not in state_files:
         st.warning(f"ZIP boundary data not available for {state_code}. Showing scatter plot instead.")
-        return create_zip_map(zip_data_df, state_code)
+        return create_state_zip_map(zip_data_df, state_code)
     
     filename, center_lat, center_lon, zoom_level = state_files[state_code.upper()]
-    geojson_path = f"/Users/malikgalbraith/Desktop/Coding Folder/FEC_Coder_Project_Streamlit/Databases/{filename}"
+    geojson_path = os.path.join("Databases", filename)
     
     try:
         import json
@@ -1042,7 +1042,7 @@ def create_zip_choropleth(zip_data_df, state_code='CA', max_zips=500):
     except FileNotFoundError:
         # Fallback to scatter plot if GeoJSON not available
         st.warning(f"ZIP boundary data not available for {state_code}. Showing scatter plot instead.")
-        return create_zip_map(zip_data_df, state_code)
+        return create_state_zip_map(zip_data_df, state_code)
     
     # Create hover text
     df_clean['hover_text'] = (
@@ -1729,7 +1729,7 @@ def display_results(results):
                             else:
                                 st.warning(f"ZIP heatmap not yet available for {display_state}. Only California (CA) is currently supported.")
                                 # Fallback to regular scatter plot
-                                zip_map = create_zip_map(geographic_data['zip_data'], display_state)
+                                zip_map = create_state_zip_map(geographic_data['zip_data'], display_state)
                                 st.plotly_chart(zip_map, use_container_width=True)
                         else:
                             # Create Folium map with built-in city labels and roads
