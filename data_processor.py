@@ -235,6 +235,19 @@ class FECDataProcessor:
                 sources.append(source_text)
                 match_details.append(bad_donor_match)
             
+            # Check RGA Donors databases (separate from bad donors but show in same section)
+            rga_donor_match = self.check_rga_donor_match(row)
+            if rga_donor_match:
+                flags.append(f"BAD_DONOR_{rga_donor_match['confidence']}")
+                confidence_info.append(rga_donor_match['confidence'])
+                
+                # Create detailed source info
+                source_text = f"{rga_donor_match['color']} {rga_donor_match['confidence']} CONFIDENCE - {rga_donor_match['match_type']}: {rga_donor_match['affiliation']}"
+                if rga_donor_match.get('additional_matches', 0) > 0:
+                    source_text += f" (+{rga_donor_match['additional_matches']} more matches)"
+                sources.append(source_text)
+                match_details.append(rga_donor_match)
+            
             # Check Bad Employers database
             if row['employer']:
                 bad_employer_match = self.check_bad_employer_match(row['employer'])
@@ -437,6 +450,54 @@ class FECDataProcessor:
         cursor.execute('SELECT flag FROM bad_employers WHERE UPPER(name) = ?', (employer.upper(),))
         result = cursor.fetchone()
         return result[0] if result else None
+    
+    def check_rga_donor_match(self, row):
+        """Check if donor matches RGA Donors databases with ZIP code matching for high confidence"""
+        cursor = self.conn.cursor()
+        matches = []
+        
+        # Create ZIP code key from donor ZIP (first 5 digits)
+        donor_zip = str(row.get('zip_code', '')).strip()[:5] if row.get('zip_code') else ''
+        
+        if donor_zip and len(donor_zip) == 5:
+            # Level 1: HIGH Confidence - First + Last + ZIP match
+            name_zip_key = f"{row['first_name'].upper()} {row['last_name'].upper()} {donor_zip}"
+            
+            # Check 2023 RGA donors
+            cursor.execute('SELECT org_name, contrib_date, contribution_amt FROM rga_donors_2023 WHERE name_zip_key = ?', (name_zip_key,))
+            results_2023 = cursor.fetchall()
+            
+            # Check 2024 RGA donors
+            cursor.execute('SELECT org_name, contrib_date, contribution_amt FROM rga_donors_2024 WHERE name_zip_key = ?', (name_zip_key,))
+            results_2024 = cursor.fetchall()
+            
+            all_results = results_2023 + results_2024
+            
+            if all_results:
+                # Calculate total contributions and years
+                total_amount = sum(float(result[2]) if result[2] else 0 for result in all_results)
+                years = set()
+                for result in all_results:
+                    if result[1]:  # contrib_date
+                        try:
+                            year = result[1].split('/')[-1] if '/' in result[1] else result[1][:4]
+                            years.add(year)
+                        except:
+                            pass
+                
+                years_text = ', '.join(sorted(years)) if years else 'Unknown'
+                affiliation_text = f"RGA Donor ({years_text}) - Total: ${total_amount:,.2f} across {len(all_results)} contribution(s)"
+                
+                matches.append({
+                    'confidence': 'HIGH',
+                    'level': 1,
+                    'match_type': 'First + Last + ZIP',
+                    'affiliation': affiliation_text,
+                    'color': '🔴',
+                    'additional_matches': len(all_results) - 1 if len(all_results) > 1 else 0
+                })
+        
+        return matches[0] if matches else None
     
     
     def check_bad_group_by_id(self, committee_id):

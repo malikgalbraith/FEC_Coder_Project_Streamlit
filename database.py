@@ -133,6 +133,60 @@ def create_tables(cursor):
             updated_date TEXT
         )
     ''')
+    
+    # RGA Donors 2023 table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS rga_donors_2023 (
+            id INTEGER PRIMARY KEY,
+            first_name TEXT,
+            last_name TEXT,
+            state TEXT,
+            zip_code TEXT,
+            name_zip_key TEXT,
+            full_key TEXT,
+            name_key TEXT,
+            contributor_name TEXT,
+            organization_name TEXT,
+            address_1 TEXT,
+            address_2 TEXT,
+            city TEXT,
+            zip_ext TEXT,
+            employer TEXT,
+            contribution_amt REAL,
+            occupation TEXT,
+            agg_contrib_ytd REAL,
+            contrib_date TEXT,
+            org_name TEXT,
+            ein TEXT
+        )
+    ''')
+    
+    # RGA Donors 2024 table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS rga_donors_2024 (
+            id INTEGER PRIMARY KEY,
+            first_name TEXT,
+            last_name TEXT,
+            state TEXT,
+            zip_code TEXT,
+            name_zip_key TEXT,
+            full_key TEXT,
+            name_key TEXT,
+            contributor_name TEXT,
+            organization_name TEXT,
+            address_1 TEXT,
+            address_2 TEXT,
+            city TEXT,
+            zip_ext TEXT,
+            employer TEXT,
+            contribution_amt REAL,
+            occupation TEXT,
+            agg_contrib_ytd REAL,
+            contrib_date TEXT,
+            org_name TEXT,
+            ein TEXT
+        )
+    ''')
 
 def import_csv_data(conn):
     """Import data from CSV files into database tables"""
@@ -240,6 +294,82 @@ def import_csv_data(conn):
         df = df[expected_cols]
         df.to_sql('lpac', conn, if_exists='replace', index=False)
         print(f"Imported {len(df)} LPAC records")
+    
+    # RGA Donors 2023
+    if os.path.exists(CSV_FILES["rga_donors_2023"]):
+        df = pd.read_csv(CSV_FILES["rga_donors_2023"])
+        # Map CSV columns to database columns
+        df = df.rename(columns={
+            'First_Name': 'first_name',
+            'Last_Name': 'last_name',
+            'state': 'state',
+            'zip': 'zip_code',
+            'contributor_name': 'contributor_name',
+            'Organization Name': 'organization_name',
+            'address_1': 'address_1',
+            'address_2': 'address_2',
+            'city': 'city',
+            'zip_ext': 'zip_ext',
+            'employer': 'employer',
+            'contribution_amt': 'contribution_amt',
+            'occupation': 'occupation',
+            'agg_contrib_ytd': 'agg_contrib_ytd',
+            'contrib_date': 'contrib_date',
+            'org_name': 'org_name',
+            'ein': 'ein'
+        })
+        
+        # Create matching keys for individuals only (skip organizations)
+        df = df[df['first_name'].notna() & df['last_name'].notna() & (df['first_name'] != '') & (df['last_name'] != '')]
+        
+        # Clean and normalize ZIP codes (take first 5 digits)
+        df['zip_code'] = df['zip_code'].astype(str).str[:5]
+        
+        # Create matching keys
+        df['name_zip_key'] = df['first_name'].str.upper() + ' ' + df['last_name'].str.upper() + ' ' + df['zip_code']
+        df['full_key'] = df['first_name'].str.upper() + ' ' + df['last_name'].str.upper() + ' ' + df['state'].str.upper()
+        df['name_key'] = df['first_name'].str.upper() + ' ' + df['last_name'].str.upper()
+        
+        df.to_sql('rga_donors_2023', conn, if_exists='replace', index=False)
+        print(f"Imported {len(df)} RGA 2023 donor records")
+    
+    # RGA Donors 2024
+    if os.path.exists(CSV_FILES["rga_donors_2024"]):
+        df = pd.read_csv(CSV_FILES["rga_donors_2024"])
+        # Map CSV columns to database columns
+        df = df.rename(columns={
+            'First_Name': 'first_name',
+            'Last_Name': 'last_name',
+            'state': 'state',
+            'zip': 'zip_code',
+            'contributor_name': 'contributor_name',
+            'Organization Name': 'organization_name',
+            'address_1': 'address_1',
+            'address_2': 'address_2',
+            'city': 'city',
+            'zip_ext': 'zip_ext',
+            'employer': 'employer',
+            'contribution_amt': 'contribution_amt',
+            'occupation': 'occupation',
+            'agg_contrib_ytd': 'agg_contrib_ytd',
+            'contrib_date': 'contrib_date',
+            'org_name': 'org_name',
+            'ein': 'ein'
+        })
+        
+        # Create matching keys for individuals only (skip organizations)
+        df = df[df['first_name'].notna() & df['last_name'].notna() & (df['first_name'] != '') & (df['last_name'] != '')]
+        
+        # Clean and normalize ZIP codes (take first 5 digits)
+        df['zip_code'] = df['zip_code'].astype(str).str[:5]
+        
+        # Create matching keys
+        df['name_zip_key'] = df['first_name'].str.upper() + ' ' + df['last_name'].str.upper() + ' ' + df['zip_code']
+        df['full_key'] = df['first_name'].str.upper() + ' ' + df['last_name'].str.upper() + ' ' + df['state'].str.upper()
+        df['name_key'] = df['first_name'].str.upper() + ' ' + df['last_name'].str.upper()
+        
+        df.to_sql('rga_donors_2024', conn, if_exists='replace', index=False)
+        print(f"Imported {len(df)} RGA 2024 donor records")
 
 def create_indexes(cursor):
     """Create indexes for fast lookups"""
@@ -271,6 +401,16 @@ def create_indexes(cursor):
     
     # Bad Employers indexes
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_bad_employers_name ON bad_employers(name)')
+    
+    # RGA Donors 2023 indexes
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_rga_2023_name_zip_key ON rga_donors_2023(name_zip_key)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_rga_2023_full_key ON rga_donors_2023(full_key)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_rga_2023_name_key ON rga_donors_2023(name_key)')
+    
+    # RGA Donors 2024 indexes
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_rga_2024_name_zip_key ON rga_donors_2024(name_zip_key)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_rga_2024_full_key ON rga_donors_2024(full_key)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_rga_2024_name_key ON rga_donors_2024(name_key)')
     
     print("Created all database indexes")
 

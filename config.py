@@ -19,5 +19,7 @@ CSV_FILES = {
     "bad_employers": "Databases/Bad Employer Master.csv",
     "bad_groups": "Databases/Bad Group Master.csv",
     "industries": "Databases/Industry Master.csv",
-    "lpac": "Databases/LPAC Master.csv"
+    "lpac": "Databases/LPAC Master.csv",
+    "rga_donors_2023": "/Users/malikgalbraith/Documents/new data/2023 RGA Donors.csv",
+    "rga_donors_2024": "/Users/malikgalbraith/Documents/new data/2024 RGA Donors.csv"
 }
