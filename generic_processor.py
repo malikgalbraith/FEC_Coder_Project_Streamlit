@@ -528,7 +528,7 @@ class GenericDataProcessor:
             contribution_count = len(group_df)
             
             # Store individual dates and amounts for detailed display
-            dates = group_df['date'].dropna().tolist()
+            dates = group_df['date'].dropna().astype(str).tolist()
             amounts = group_df['amount_numeric'].tolist()
             
             # Create date range for backward compatibility
