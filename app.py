@@ -310,10 +310,16 @@ def generate_email_report(flagged_donors):
         amount = donor.get('amount', '$0.00')
         amount_numeric = donor.get('amount_numeric', 0)
         
-        # Clean the flag description
-        flag_desc = clean_flag_description(donor.get('flag_sources', ''))
+        # Get simplified flag description
+        flags = donor.get('flags', '')
+        if 'BAD_EMPLOYER' in flags:
+            flag_desc = "Bad Employer"
+        elif 'BAD_DONOR' in flags:
+            flag_desc = "Bad Donor"
+        else:
+            flag_desc = "Flagged"
         
-        # Format the line
+        # Simplified format: First Last, Total Amount, Flag
         line = f"• {first_name} {last_name}, {amount}, {flag_desc}"
         report_lines.append(line)
         
@@ -460,7 +466,17 @@ def display_donor_list(donors_df):
                 st.write(f"**Total Amount:** {donor['amount']}")
                 if donor.get('contribution_count', 1) > 1:
                     st.write(f"**Contributions:** {donor['contribution_count']}")
-                st.write(f"**Date(s):** {donor['date']}")
+                
+                # Show enhanced contribution details if available
+                if donor.get('contribution_dates') and len(donor['contribution_dates']) > 1:
+                    dates_str = ", ".join(donor['contribution_dates'])
+                    st.write(f"**Contribution Dates:** {dates_str}")
+                    
+                    if donor.get('contribution_amounts'):
+                        amounts_str = ", ".join([f"{amt:.0f}" for amt in donor['contribution_amounts']])
+                        st.write(f"**Contribution Amounts:** {amounts_str}")
+                else:
+                    st.write(f"**Date(s):** {donor['date']}")
             with col2:
                 st.write(f"**Employer:** {donor['employer']}")
                 if confidence:

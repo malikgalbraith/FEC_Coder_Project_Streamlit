@@ -289,8 +289,11 @@ class FECDataProcessor:
             total_amount = group_df['amount_numeric'].sum()
             contribution_count = len(group_df)
             
-            # Combine dates (show date range)
+            # Store individual dates and amounts for detailed display
             dates = group_df['date'].dropna().tolist()
+            amounts = group_df['amount_numeric'].tolist()
+            
+            # Create date range for backward compatibility
             if len(dates) > 1:
                 date_range = f"{min(dates)} to {max(dates)}"
             elif len(dates) == 1:
@@ -315,7 +318,10 @@ class FECDataProcessor:
                 'memo': combined_memo[:500] if combined_memo else first_record['memo'],  # Limit length
                 'employer': combined_employer[:200] if combined_employer else first_record['employer'],
                 'contribution_count': contribution_count,
-                'is_grouped': contribution_count > 1
+                'is_grouped': contribution_count > 1,
+                # Store individual contribution details
+                'contribution_dates': dates,
+                'contribution_amounts': amounts
             })
             
             # Remove the temporary grouping key

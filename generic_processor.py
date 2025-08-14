@@ -20,6 +20,10 @@ class GenericDataProcessor:
         # Process individual donors only (as per user requirement)
         individual_donors = self._process_all_individual_donors(mapped_df)
         
+        # Group duplicate donors (same as FECDataProcessor)
+        if not individual_donors.empty:
+            individual_donors = self.group_duplicate_donors(individual_donors)
+        
         # Return results in the same format as FECDataProcessor
         results = {
             'bad_donors': individual_donors,
@@ -495,6 +499,76 @@ class GenericDataProcessor:
         """Extract filer information - not applicable for generic data"""
         # Generic CSV data doesn't have filer information
         return {'filer_state': None, 'filer_district': None}
+    
+    def group_duplicate_donors(self, df):
+        """
+        Group donors by name and zip code, combining their contributions
+        Same logic as FECDataProcessor for consistency
+        """
+        if df.empty:
+            return df
+        
+        # Create grouping key based on name and zip code
+        df['grouping_key'] = (df['first_name'].str.upper() + ' ' + 
+                             df['last_name'].str.upper() + ' ' + 
+                             df['zip_code'].str.strip()).str.strip()
+        
+        # Group by the key and aggregate data
+        grouped_data = []
+        
+        for group_key, group_df in df.groupby('grouping_key'):
+            if group_df.empty:
+                continue
+                
+            # Use data from first record as base
+            first_record = group_df.iloc[0].copy()
+            
+            # Aggregate amounts
+            total_amount = group_df['amount_numeric'].sum()
+            contribution_count = len(group_df)
+            
+            # Store individual dates and amounts for detailed display
+            dates = group_df['date'].dropna().tolist()
+            amounts = group_df['amount_numeric'].tolist()
+            
+            # Create date range for backward compatibility
+            if len(dates) > 1:
+                date_range = f"{min(dates)} to {max(dates)}"
+            elif len(dates) == 1:
+                date_range = dates[0]
+            else:
+                date_range = ""
+            
+            # Combine employers (unique values only) - use 'employer' not 'memo'
+            employers = group_df['employer'].dropna().unique().tolist()
+            combined_employer = " | ".join([emp for emp in employers if emp.strip()])
+            
+            # Create grouped record
+            grouped_record = first_record.to_dict()
+            grouped_record.update({
+                'amount': f"${total_amount:,.2f}",
+                'amount_numeric': total_amount,
+                'date': date_range,
+                'employer': combined_employer[:200] if combined_employer else first_record['employer'],
+                'contribution_count': contribution_count,
+                'is_grouped': contribution_count > 1,
+                # Store individual contribution details
+                'contribution_dates': dates,
+                'contribution_amounts': amounts
+            })
+            
+            # Remove the temporary grouping key
+            if 'grouping_key' in grouped_record:
+                del grouped_record['grouping_key']
+                
+            grouped_data.append(grouped_record)
+        
+        # Convert back to DataFrame and remove the temporary grouping column
+        result_df = pd.DataFrame(grouped_data)
+        if 'grouping_key' in result_df.columns:
+            result_df = result_df.drop('grouping_key', axis=1)
+            
+        return result_df
     
     def close(self):
         """Close database connection safely"""
