@@ -1834,6 +1834,32 @@ def main():
     
     # Debug section (for troubleshooting RGA functionality)
     with st.sidebar.expander("🔧 Debug Tools", expanded=False):
+        if st.button("Check CSV Files Status"):
+            from config import CSV_FILES, BASE_DIR, DATABASE_PATH
+            
+            st.write("**Base Directory:**")
+            st.code(BASE_DIR)
+            
+            st.write("**Database Path:**")
+            st.code(DATABASE_PATH)
+            st.write(f"Database exists: {os.path.exists(DATABASE_PATH)}")
+            if os.path.exists(DATABASE_PATH):
+                st.write(f"Database size: {os.path.getsize(DATABASE_PATH):,} bytes")
+            
+            st.write("**CSV Files Status:**")
+            rga_files = ["rga_donors_2023", "rga_donors_2024"]
+            
+            for file_key in rga_files:
+                file_path = CSV_FILES[file_key]
+                exists = os.path.exists(file_path)
+                if exists:
+                    file_size = os.path.getsize(file_path)
+                    st.success(f"✅ {file_key}: Found ({file_size:,} bytes)")
+                    st.code(file_path)
+                else:
+                    st.error(f"❌ {file_key}: Not found")
+                    st.code(file_path)
+        
         if st.button("Check Database Status"):
             conn = get_connection()
             cursor = conn.cursor()
@@ -1848,20 +1874,32 @@ def main():
                 
                 # Check RGA data counts
                 for table in rga_tables:
-                    cursor.execute(f"SELECT COUNT(*) FROM {table}")
-                    count = cursor.fetchone()[0]
-                    st.write(f"📊 {table}: {count} records")
-                    
-                    # Show sample data
-                    cursor.execute(f"SELECT first_name, last_name, state, zip_code FROM {table} LIMIT 3")
-                    samples = cursor.fetchall()
-                    for sample in samples:
-                        st.write(f"  • {sample[0]} {sample[1]} ({sample[2]}, {sample[3]})")
+                    try:
+                        cursor.execute(f"SELECT COUNT(*) FROM {table}")
+                        count = cursor.fetchone()[0]
+                        st.write(f"📊 {table}: {count} records")
+                        
+                        # Show sample data
+                        cursor.execute(f"SELECT first_name, last_name, state, zip_code FROM {table} LIMIT 3")
+                        samples = cursor.fetchall()
+                        for sample in samples:
+                            st.write(f"  • {sample[0]} {sample[1]} ({sample[2]}, {sample[3]})")
+                    except Exception as e:
+                        st.error(f"❌ Error querying {table}: {e}")
             else:
                 st.error("❌ No RGA tables found!")
                 st.write(f"Available tables: {tables}")
             
             conn.close()
+        
+        if st.button("Rebuild Database"):
+            with st.spinner("Rebuilding database..."):
+                try:
+                    create_database()
+                    st.success("✅ Database rebuilt successfully!")
+                except Exception as e:
+                    st.error(f"❌ Database rebuild failed: {e}")
+                    st.exception(e)
         
         if st.button("Test RGA Matching"):
             from generic_processor import GenericDataProcessor

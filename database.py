@@ -296,80 +296,100 @@ def import_csv_data(conn):
         print(f"Imported {len(df)} LPAC records")
     
     # RGA Donors 2023
+    print(f"DEBUG: Checking for RGA 2023 file at: {CSV_FILES['rga_donors_2023']}")
     if os.path.exists(CSV_FILES["rga_donors_2023"]):
-        df = pd.read_csv(CSV_FILES["rga_donors_2023"])
-        # Map CSV columns to database columns
-        df = df.rename(columns={
-            'First_Name': 'first_name',
-            'Last_Name': 'last_name',
-            'state': 'state',
-            'zip': 'zip_code',
-            'contributor_name': 'contributor_name',
-            'Organization Name': 'organization_name',
-            'address_1': 'address_1',
-            'address_2': 'address_2',
-            'city': 'city',
-            'zip_ext': 'zip_ext',
-            'employer': 'employer',
-            'contribution_amt': 'contribution_amt',
-            'occupation': 'occupation',
-            'agg_contrib_ytd': 'agg_contrib_ytd',
-            'contrib_date': 'contrib_date',
-            'org_name': 'org_name',
-            'ein': 'ein'
-        })
-        
-        # Create matching keys for individuals only (skip organizations)
-        df = df[df['first_name'].notna() & df['last_name'].notna() & (df['first_name'] != '') & (df['last_name'] != '')]
-        
-        # Clean and normalize ZIP codes (take first 5 digits)
-        df['zip_code'] = df['zip_code'].astype(str).str[:5]
-        
-        # Create matching keys
-        df['name_zip_key'] = df['first_name'].str.upper() + ' ' + df['last_name'].str.upper() + ' ' + df['zip_code']
-        df['full_key'] = df['first_name'].str.upper() + ' ' + df['last_name'].str.upper() + ' ' + df['state'].str.upper()
-        df['name_key'] = df['first_name'].str.upper() + ' ' + df['last_name'].str.upper()
-        
-        df.to_sql('rga_donors_2023', conn, if_exists='replace', index=False)
-        print(f"Imported {len(df)} RGA 2023 donor records")
+        print(f"DEBUG: RGA 2023 file found, attempting to import...")
+        try:
+            df = pd.read_csv(CSV_FILES["rga_donors_2023"])
+            print(f"DEBUG: Successfully read RGA 2023 CSV with {len(df)} rows and columns: {list(df.columns)}")
+            
+            # Map CSV columns to database columns
+            df = df.rename(columns={
+                'First_Name': 'first_name',
+                'Last_Name': 'last_name',
+                'state': 'state',
+                'zip': 'zip_code',
+                'contributor_name': 'contributor_name',
+                'Organization Name': 'organization_name',
+                'address_1': 'address_1',
+                'address_2': 'address_2',
+                'city': 'city',
+                'zip_ext': 'zip_ext',
+                'employer': 'employer',
+                'contribution_amt': 'contribution_amt',
+                'occupation': 'occupation',
+                'agg_contrib_ytd': 'agg_contrib_ytd',
+                'contrib_date': 'contrib_date',
+                'org_name': 'org_name',
+                'ein': 'ein'
+            })
+            
+            # Create matching keys for individuals only (skip organizations)
+            df = df[df['first_name'].notna() & df['last_name'].notna() & (df['first_name'] != '') & (df['last_name'] != '')]
+            print(f"DEBUG: Filtered to {len(df)} individual donors (excluding organizations)")
+            
+            # Clean and normalize ZIP codes (take first 5 digits)
+            df['zip_code'] = df['zip_code'].astype(str).str[:5]
+            
+            # Create matching keys
+            df['name_zip_key'] = df['first_name'].str.upper() + ' ' + df['last_name'].str.upper() + ' ' + df['zip_code']
+            df['full_key'] = df['first_name'].str.upper() + ' ' + df['last_name'].str.upper() + ' ' + df['state'].str.upper()
+            df['name_key'] = df['first_name'].str.upper() + ' ' + df['last_name'].str.upper()
+            
+            df.to_sql('rga_donors_2023', conn, if_exists='replace', index=False)
+            print(f"Successfully imported {len(df)} RGA 2023 donor records to database")
+        except Exception as e:
+            print(f"ERROR: Failed to import RGA 2023 donors: {e}")
+    else:
+        print(f"WARNING: RGA 2023 file not found at {CSV_FILES['rga_donors_2023']}")
     
     # RGA Donors 2024
+    print(f"DEBUG: Checking for RGA 2024 file at: {CSV_FILES['rga_donors_2024']}")
     if os.path.exists(CSV_FILES["rga_donors_2024"]):
-        df = pd.read_csv(CSV_FILES["rga_donors_2024"])
-        # Map CSV columns to database columns
-        df = df.rename(columns={
-            'First_Name': 'first_name',
-            'Last_Name': 'last_name',
-            'state': 'state',
-            'zip': 'zip_code',
-            'contributor_name': 'contributor_name',
-            'Organization Name': 'organization_name',
-            'address_1': 'address_1',
-            'address_2': 'address_2',
-            'city': 'city',
-            'zip_ext': 'zip_ext',
-            'employer': 'employer',
-            'contribution_amt': 'contribution_amt',
-            'occupation': 'occupation',
-            'agg_contrib_ytd': 'agg_contrib_ytd',
-            'contrib_date': 'contrib_date',
-            'org_name': 'org_name',
-            'ein': 'ein'
-        })
-        
-        # Create matching keys for individuals only (skip organizations)
-        df = df[df['first_name'].notna() & df['last_name'].notna() & (df['first_name'] != '') & (df['last_name'] != '')]
-        
-        # Clean and normalize ZIP codes (take first 5 digits)
-        df['zip_code'] = df['zip_code'].astype(str).str[:5]
-        
-        # Create matching keys
-        df['name_zip_key'] = df['first_name'].str.upper() + ' ' + df['last_name'].str.upper() + ' ' + df['zip_code']
-        df['full_key'] = df['first_name'].str.upper() + ' ' + df['last_name'].str.upper() + ' ' + df['state'].str.upper()
-        df['name_key'] = df['first_name'].str.upper() + ' ' + df['last_name'].str.upper()
-        
-        df.to_sql('rga_donors_2024', conn, if_exists='replace', index=False)
-        print(f"Imported {len(df)} RGA 2024 donor records")
+        print(f"DEBUG: RGA 2024 file found, attempting to import...")
+        try:
+            df = pd.read_csv(CSV_FILES["rga_donors_2024"])
+            print(f"DEBUG: Successfully read RGA 2024 CSV with {len(df)} rows and columns: {list(df.columns)}")
+            
+            # Map CSV columns to database columns
+            df = df.rename(columns={
+                'First_Name': 'first_name',
+                'Last_Name': 'last_name',
+                'state': 'state',
+                'zip': 'zip_code',
+                'contributor_name': 'contributor_name',
+                'Organization Name': 'organization_name',
+                'address_1': 'address_1',
+                'address_2': 'address_2',
+                'city': 'city',
+                'zip_ext': 'zip_ext',
+                'employer': 'employer',
+                'contribution_amt': 'contribution_amt',
+                'occupation': 'occupation',
+                'agg_contrib_ytd': 'agg_contrib_ytd',
+                'contrib_date': 'contrib_date',
+                'org_name': 'org_name',
+                'ein': 'ein'
+            })
+            
+            # Create matching keys for individuals only (skip organizations)
+            df = df[df['first_name'].notna() & df['last_name'].notna() & (df['first_name'] != '') & (df['last_name'] != '')]
+            print(f"DEBUG: Filtered to {len(df)} individual donors (excluding organizations)")
+            
+            # Clean and normalize ZIP codes (take first 5 digits)
+            df['zip_code'] = df['zip_code'].astype(str).str[:5]
+            
+            # Create matching keys
+            df['name_zip_key'] = df['first_name'].str.upper() + ' ' + df['last_name'].str.upper() + ' ' + df['zip_code']
+            df['full_key'] = df['first_name'].str.upper() + ' ' + df['last_name'].str.upper() + ' ' + df['state'].str.upper()
+            df['name_key'] = df['first_name'].str.upper() + ' ' + df['last_name'].str.upper()
+            
+            df.to_sql('rga_donors_2024', conn, if_exists='replace', index=False)
+            print(f"Successfully imported {len(df)} RGA 2024 donor records to database")
+        except Exception as e:
+            print(f"ERROR: Failed to import RGA 2024 donors: {e}")
+    else:
+        print(f"WARNING: RGA 2024 file not found at {CSV_FILES['rga_donors_2024']}")
 
 def create_indexes(cursor):
     """Create indexes for fast lookups"""
