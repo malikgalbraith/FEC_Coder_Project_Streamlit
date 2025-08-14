@@ -310,14 +310,32 @@ def generate_email_report(flagged_donors):
         amount = donor.get('amount', '$0.00')
         amount_numeric = donor.get('amount_numeric', 0)
         
-        # Get simplified flag description
+        # Get simplified flag description based on match details
         flags = donor.get('flags', '')
+        match_details = donor.get('match_details', [])
+        
+        flag_desc = "Flagged"  # Default fallback
+        
         if 'BAD_EMPLOYER' in flags:
             flag_desc = "Bad Employer"
+        elif match_details:
+            # Check if this is from RGA database or bad donor database
+            for detail in match_details:
+                affiliation = detail.get('affiliation', '')
+                if affiliation.startswith('RGA Donor'):
+                    # Extract total amount from RGA affiliation text
+                    if 'Total: $' in affiliation:
+                        total_part = affiliation.split('Total: $')[1].split(' ')[0]
+                        flag_desc = f"RGA Donor ${total_part}"
+                    else:
+                        flag_desc = "RGA Donor"
+                    break
+                else:
+                    # This is from bad donor database, use the affiliation
+                    flag_desc = affiliation[:50] + "..." if len(affiliation) > 50 else affiliation
+                    break
         elif 'BAD_DONOR' in flags:
             flag_desc = "Bad Donor"
-        else:
-            flag_desc = "Flagged"
         
         # Simplified format: First Last, Total Amount, Flag
         line = f"• {first_name} {last_name}, {amount}, {flag_desc}"
