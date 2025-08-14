@@ -180,6 +180,12 @@ class GenericDataProcessor:
                 donor_data['flags'] = '|'.join([f['flag'] for f in all_flags])
                 donor_data['flag_sources'] = '|'.join([f['source'] for f in all_flags])
                 donor_data['confidence_level'] = self._determine_confidence_level(all_flags)
+                
+                # Store RGA total information if available
+                rga_flag = next((f for f in all_flags if 'RGA Donor' in f.get('source', '')), None)
+                if rga_flag:
+                    donor_data['rga_total'] = rga_flag.get('rga_total', 0)
+                    donor_data['rga_contributions'] = rga_flag.get('rga_contributions', 0)
             
             # Add ALL donors to the list (flagged and unflagged)
             all_donors.append(donor_data)
@@ -388,12 +394,16 @@ class GenericDataProcessor:
                             pass
                 
                 years_text = ', '.join(sorted(years)) if years else 'Unknown'
-                affiliation_text = f"RGA Donor ({years_text}) - Total: ${total_amount:,.2f} across {len(all_results)} contribution(s)"
+                # Simplified affiliation text for cleaner display
+                affiliation_text = f"{years_text} RGA Donor"
                 
                 flags.append({
                     'flag': 'BAD_DONOR',
                     'source': affiliation_text,
-                    'confidence': 'HIGH'
+                    'confidence': 'HIGH',
+                    # Store RGA total separately for dropdown display
+                    'rga_total': total_amount,
+                    'rga_contributions': len(all_results)
                 })
         
         except Exception as e:

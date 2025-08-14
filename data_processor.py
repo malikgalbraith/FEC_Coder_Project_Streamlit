@@ -260,6 +260,12 @@ class FECDataProcessor:
             df.at[idx, 'flag_sources'] = '|'.join(sources)
             df.at[idx, 'confidence_level'] = confidence_info[0] if confidence_info else ''
             df.at[idx, 'match_details'] = str(match_details[0]) if match_details else ''
+            
+            # Store RGA total information if available
+            rga_match = next((detail for detail in match_details if 'RGA Donor' in detail.get('affiliation', '')), None)
+            if rga_match:
+                df.at[idx, 'rga_total'] = rga_match.get('rga_total', 0)
+                df.at[idx, 'rga_contributions'] = rga_match.get('rga_contributions', 0)
         
         return df
     
@@ -492,7 +498,8 @@ class FECDataProcessor:
                             pass
                 
                 years_text = ', '.join(sorted(years)) if years else 'Unknown'
-                affiliation_text = f"RGA Donor ({years_text}) - Total: ${total_amount:,.2f} across {len(all_results)} contribution(s)"
+                # Simplified affiliation text for cleaner display
+                affiliation_text = f"{years_text} RGA Donor"
                 
                 matches.append({
                     'confidence': 'HIGH',
@@ -500,7 +507,10 @@ class FECDataProcessor:
                     'match_type': 'First + Last + ZIP',
                     'affiliation': affiliation_text,
                     'color': '🔴',
-                    'additional_matches': len(all_results) - 1 if len(all_results) > 1 else 0
+                    'additional_matches': len(all_results) - 1 if len(all_results) > 1 else 0,
+                    # Store RGA total separately for dropdown display
+                    'rga_total': total_amount,
+                    'rga_contributions': len(all_results)
                 })
         
         return matches[0] if matches else None

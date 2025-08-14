@@ -277,6 +277,9 @@ def clean_flag_description(flag_sources):
             # Extract employer name if available
             employer_part = source.split('Bad Employer: ')[-1]
             clean_descriptions.append(f"Bad Employer: {employer_part}")
+        elif 'RGA Donor' in source:
+            # Use the simplified RGA format directly
+            clean_descriptions.append(source)
         elif 'HIGH CONFIDENCE' in source:
             # Extract affiliation info
             affiliation = source.split(': ')[-1] if ': ' in source else source
@@ -322,13 +325,9 @@ def generate_email_report(flagged_donors):
             # Check if this is from RGA database or bad donor database
             for detail in match_details:
                 affiliation = detail.get('affiliation', '')
-                if affiliation.startswith('RGA Donor'):
-                    # Extract total amount from RGA affiliation text
-                    if 'Total: $' in affiliation:
-                        total_part = affiliation.split('Total: $')[1].split(' ')[0]
-                        flag_desc = f"RGA Donor ${total_part}"
-                    else:
-                        flag_desc = "RGA Donor"
+                if 'RGA Donor' in affiliation:
+                    # Use the simplified RGA format (e.g., "2023 RGA Donor")
+                    flag_desc = affiliation
                     break
                 else:
                     # This is from bad donor database, use the affiliation
@@ -500,7 +499,13 @@ def display_donor_list(donors_df):
                 if confidence:
                     st.write(f"**Confidence:** {confidence}")
                 
-                if donor['memo']:
+                # Show RGA donation total if available
+                if donor.get('rga_total') and donor['rga_total'] > 0:
+                    st.write(f"**RGA Donations Total:** ${donor['rga_total']:,.2f}")
+                    if donor.get('rga_contributions', 0) > 1:
+                        st.write(f"**RGA Contributions:** {donor['rga_contributions']}")
+                
+                if donor.get('memo') and donor['memo']:
                     st.write(f"**Memo:** {donor['memo']}")
                     
                 # Add investigation notes
