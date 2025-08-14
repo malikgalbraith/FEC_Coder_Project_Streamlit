@@ -159,6 +159,9 @@ class GenericDataProcessor:
             # Check against bad donor database
             bad_donor_flags = self._check_bad_donors(donor_data)
             
+            # Check against RGA donor database
+            rga_donor_flags = self._check_rga_donors(donor_data)
+            
             # Check against bad employer database
             bad_employer_flags = self._check_bad_employers(donor_data)
             
@@ -166,7 +169,7 @@ class GenericDataProcessor:
             bad_legislation_flags = self._check_bad_legislation(donor_data)
             
             # Combine all flags
-            all_flags = bad_donor_flags + bad_employer_flags + bad_legislation_flags
+            all_flags = bad_donor_flags + rga_donor_flags + bad_employer_flags + bad_legislation_flags
             
             # Set flag information (if any)
             if all_flags:
@@ -229,6 +232,9 @@ class GenericDataProcessor:
             # Check against bad donor database
             bad_donor_flags = self._check_bad_donors(donor_data)
             
+            # Check against RGA donor database
+            rga_donor_flags = self._check_rga_donors(donor_data)
+            
             # Check against bad employer database
             bad_employer_flags = self._check_bad_employers(donor_data)
             
@@ -236,7 +242,7 @@ class GenericDataProcessor:
             bad_legislation_flags = self._check_bad_legislation(donor_data)
             
             # Combine all flags
-            all_flags = bad_donor_flags + bad_employer_flags + bad_legislation_flags
+            all_flags = bad_donor_flags + rga_donor_flags + bad_employer_flags + bad_legislation_flags
             
             if all_flags:
                 donor_data['flags'] = '|'.join([f['flag'] for f in all_flags])
@@ -324,6 +330,60 @@ class GenericDataProcessor:
         # Bad legislation analysis is for PACs/committees, not individual donors
         # For generic data (all treated as individual donors), return empty flags
         return []
+    
+    def _check_rga_donors(self, donor_data):
+        """Check donor against RGA Donors databases with ZIP code matching"""
+        flags = []
+        
+        # Create ZIP code key from donor ZIP (first 5 digits)
+        donor_zip = str(donor_data.get('zip_code', '')).strip()[:5] if donor_data.get('zip_code') else ''
+        
+        if not donor_zip or len(donor_zip) != 5:
+            return flags
+        
+        try:
+            cursor = self.conn.cursor()
+            
+            # Level 1: HIGH Confidence - First + Last + ZIP match
+            name_zip_key = f"{donor_data['first_name'].upper()} {donor_data['last_name'].upper()} {donor_zip}"
+            
+            # Check 2023 RGA donors
+            cursor.execute('SELECT org_name, contrib_date, contribution_amt FROM rga_donors_2023 WHERE name_zip_key = ?', (name_zip_key,))
+            results_2023 = cursor.fetchall()
+            
+            # Check 2024 RGA donors  
+            cursor.execute('SELECT org_name, contrib_date, contribution_amt FROM rga_donors_2024 WHERE name_zip_key = ?', (name_zip_key,))
+            results_2024 = cursor.fetchall()
+            
+            all_results = results_2023 + results_2024
+            
+            if all_results:
+                print(f"DEBUG: Found RGA donor match for {name_zip_key}: {len(all_results)} contributions")
+                
+                # Calculate total contributions and years
+                total_amount = sum(float(result[2]) if result[2] else 0 for result in all_results)
+                years = set()
+                for result in all_results:
+                    if result[1]:  # contrib_date
+                        try:
+                            year = result[1].split('/')[-1] if '/' in result[1] else result[1][:4]
+                            years.add(year)
+                        except:
+                            pass
+                
+                years_text = ', '.join(sorted(years)) if years else 'Unknown'
+                affiliation_text = f"RGA Donor ({years_text}) - Total: ${total_amount:,.2f} across {len(all_results)} contribution(s)"
+                
+                flags.append({
+                    'flag': 'BAD_DONOR',
+                    'source': affiliation_text,
+                    'confidence': 'HIGH'
+                })
+        
+        except Exception as e:
+            print(f"Error checking RGA donors: {e}")
+        
+        return flags
     
     def _determine_confidence_level(self, flags):
         """Determine overall confidence level from flags"""
