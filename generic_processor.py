@@ -339,6 +339,7 @@ class GenericDataProcessor:
         donor_zip = str(donor_data.get('zip_code', '')).strip()[:5] if donor_data.get('zip_code') else ''
         
         if not donor_zip or len(donor_zip) != 5:
+            print(f"DEBUG RGA: Skipping {donor_data['first_name']} {donor_data['last_name']} - Invalid ZIP: '{donor_zip}'")
             return flags
         
         try:
@@ -346,14 +347,25 @@ class GenericDataProcessor:
             
             # Level 1: HIGH Confidence - First + Last + ZIP match
             name_zip_key = f"{donor_data['first_name'].upper()} {donor_data['last_name'].upper()} {donor_zip}"
+            print(f"DEBUG RGA: Checking {name_zip_key}")
             
             # Check 2023 RGA donors
-            cursor.execute('SELECT org_name, contrib_date, contribution_amt FROM rga_donors_2023 WHERE name_zip_key = ?', (name_zip_key,))
-            results_2023 = cursor.fetchall()
+            try:
+                cursor.execute('SELECT org_name, contrib_date, contribution_amt FROM rga_donors_2023 WHERE name_zip_key = ?', (name_zip_key,))
+                results_2023 = cursor.fetchall()
+                print(f"DEBUG RGA: 2023 results: {len(results_2023)}")
+            except Exception as e:
+                print(f"DEBUG RGA: Error querying rga_donors_2023: {e}")
+                results_2023 = []
             
             # Check 2024 RGA donors  
-            cursor.execute('SELECT org_name, contrib_date, contribution_amt FROM rga_donors_2024 WHERE name_zip_key = ?', (name_zip_key,))
-            results_2024 = cursor.fetchall()
+            try:
+                cursor.execute('SELECT org_name, contrib_date, contribution_amt FROM rga_donors_2024 WHERE name_zip_key = ?', (name_zip_key,))
+                results_2024 = cursor.fetchall()
+                print(f"DEBUG RGA: 2024 results: {len(results_2024)}")
+            except Exception as e:
+                print(f"DEBUG RGA: Error querying rga_donors_2024: {e}")
+                results_2024 = []
             
             all_results = results_2023 + results_2024
             

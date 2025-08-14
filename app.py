@@ -1832,6 +1832,81 @@ def main():
     # Initialize database
     initialize_database()
     
+    # Debug section (for troubleshooting RGA functionality)
+    with st.sidebar.expander("🔧 Debug Tools", expanded=False):
+        if st.button("Check Database Status"):
+            conn = get_connection()
+            cursor = conn.cursor()
+            
+            st.write("**Database Tables:**")
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = [row[0] for row in cursor.fetchall()]
+            
+            rga_tables = [t for t in tables if 'rga' in t.lower()]
+            if rga_tables:
+                st.success(f"✅ RGA tables found: {rga_tables}")
+                
+                # Check RGA data counts
+                for table in rga_tables:
+                    cursor.execute(f"SELECT COUNT(*) FROM {table}")
+                    count = cursor.fetchone()[0]
+                    st.write(f"📊 {table}: {count} records")
+                    
+                    # Show sample data
+                    cursor.execute(f"SELECT first_name, last_name, state, zip_code FROM {table} LIMIT 3")
+                    samples = cursor.fetchall()
+                    for sample in samples:
+                        st.write(f"  • {sample[0]} {sample[1]} ({sample[2]}, {sample[3]})")
+            else:
+                st.error("❌ No RGA tables found!")
+                st.write(f"Available tables: {tables}")
+            
+            conn.close()
+        
+        if st.button("Test RGA Matching"):
+            from generic_processor import GenericDataProcessor
+            import sys
+            from io import StringIO
+            
+            # Capture print output
+            old_stdout = sys.stdout
+            sys.stdout = captured_output = StringIO()
+            
+            try:
+                processor = GenericDataProcessor()
+                
+                # Test with known RGA donor
+                test_donor = {
+                    'first_name': 'MICHAEL',
+                    'last_name': 'MANLOVE',
+                    'state': 'AZ',
+                    'zip_code': '85286',
+                    'employer': ''
+                }
+                
+                rga_flags = processor._check_rga_donors(test_donor)
+                
+                # Restore stdout
+                sys.stdout = old_stdout
+                
+                # Show captured debug output
+                debug_output = captured_output.getvalue()
+                if debug_output:
+                    st.text_area("Debug Output:", debug_output, height=100)
+                
+                if rga_flags:
+                    st.success(f"✅ RGA matching works!")
+                    st.write(f"Test result: {rga_flags[0]['source']}")
+                else:
+                    st.error("❌ RGA matching failed for test donor")
+                    
+            except Exception as e:
+                sys.stdout = old_stdout
+                st.error(f"Error during test: {e}")
+        
+        # Add a toggle for verbose debugging during uploads
+        st.session_state.debug_mode = st.checkbox("Enable Debug Mode for Uploads", value=False)
+    
     # Sidebar for input options
     st.sidebar.header("Data Input Options")
     
@@ -1991,7 +2066,28 @@ def main():
                                 # Use generic processor for mapped columns
                                 from generic_processor import GenericDataProcessor
                                 current_processor = GenericDataProcessor()
-                                results = current_processor.process_generic_data(df, st.session_state['column_mapping'])
+                                
+                                # Debug mode capture
+                                if getattr(st.session_state, 'debug_mode', False):
+                                    import sys
+                                    from io import StringIO
+                                    old_stdout = sys.stdout
+                                    sys.stdout = captured_output = StringIO()
+                                    
+                                    try:
+                                        results = current_processor.process_generic_data(df, st.session_state['column_mapping'])
+                                        sys.stdout = old_stdout
+                                        
+                                        # Show debug output
+                                        debug_output = captured_output.getvalue()
+                                        if debug_output:
+                                            st.expander("Debug Output", expanded=True).text_area("Processing Log:", debug_output, height=200)
+                                    except Exception as e:
+                                        sys.stdout = old_stdout
+                                        raise e
+                                else:
+                                    results = current_processor.process_generic_data(df, st.session_state['column_mapping'])
+                                
                                 st.session_state['processor_type'] = 'generic'
                             else:
                                 # Use FEC processor for standard format
