@@ -313,28 +313,54 @@ def generate_email_report(flagged_donors):
         amount = donor.get('amount', '$0.00')
         amount_numeric = donor.get('amount_numeric', 0)
         
-        # Get simplified flag description based on match details
+        # Get specific flag description based on flag sources and match details
         flags = donor.get('flags', '')
+        flag_sources = donor.get('flag_sources', '')
         match_details = donor.get('match_details', [])
         
         flag_desc = "Flagged"  # Default fallback
         
+        # Handle Bad Employer first (highest priority)
         if 'BAD_EMPLOYER' in flags:
             flag_desc = "Bad Employer"
-        elif match_details:
-            # Check if this is from RGA database or bad donor database
-            for detail in match_details:
-                affiliation = detail.get('affiliation', '')
-                if 'RGA Donor' in affiliation:
-                    # Use the simplified RGA format (e.g., "2023 RGA Donor")
-                    flag_desc = affiliation
-                    break
-                else:
-                    # This is from bad donor database, use the affiliation
-                    flag_desc = affiliation[:50] + "..." if len(affiliation) > 50 else affiliation
-                    break
+        
+        # Handle RGA donors 
+        elif 'RGA Donor' in flag_sources:
+            flag_desc = "RGA donor"
+            
+        # Handle Bad Donor Master - extract actual affiliation
         elif 'BAD_DONOR' in flags:
-            flag_desc = "Bad Donor"
+            # Try to get affiliation from match_details first (FEC processor)
+            if match_details:
+                try:
+                    # Parse match_details string to extract affiliation
+                    detail_str = str(match_details)
+                    if 'affiliation' in detail_str and 'Insurrectionist' in detail_str:
+                        flag_desc = "Insurrectionist"
+                    elif 'affiliation' in detail_str:
+                        # Extract affiliation text between quotes
+                        import re
+                        affiliation_match = re.search(r"'affiliation': '([^']*)'", detail_str)
+                        if affiliation_match:
+                            full_affiliation = affiliation_match.group(1)
+                            # Simplify long affiliations for email
+                            if 'Insurrectionist' in full_affiliation:
+                                flag_desc = "Insurrectionist"
+                            else:
+                                # Use first meaningful part
+                                flag_desc = full_affiliation.split(' charged with')[0] if ' charged with' in full_affiliation else full_affiliation[:50]
+                except:
+                    flag_desc = "Bad Donor"
+            
+            # Try to get affiliation from flag_sources (Generic processor)
+            elif flag_sources and flag_sources != "Bad Donor":
+                if 'Insurrectionist' in flag_sources:
+                    flag_desc = "Insurrectionist"
+                else:
+                    # Extract meaningful part from flag sources
+                    flag_desc = flag_sources.split(' - ')[-1] if ' - ' in flag_sources else flag_sources[:50]
+            else:
+                flag_desc = "Bad Donor"
         
         # Simplified format: First Last, Total Amount, Flag
         line = f"• {first_name} {last_name}, {amount}, {flag_desc}"
