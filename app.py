@@ -187,6 +187,19 @@ def initialize_database():
             create_database()
         st.success("Database initialized successfully!")
 
+def get_database_config():
+    """Get current database configuration from session state"""
+    return st.session_state.get('database_config', {
+        'bad_donors': True,
+        'rga_donors': True, 
+        'bad_employers': True
+    })
+
+def is_database_enabled(db_name):
+    """Check if a specific database is enabled for analysis"""
+    config = get_database_config()
+    return config.get(db_name, True)
+
 def sort_pac_data_by_priority(pac_data_df):
     """Sort PAC/committee data by flag priority and amount"""
     if pac_data_df.empty:
@@ -1976,7 +1989,7 @@ def main():
             sys.stdout = captured_output = StringIO()
             
             try:
-                processor = GenericDataProcessor()
+                processor = GenericDataProcessor(database_config=get_database_config())
                 
                 # Test with known RGA donor
                 test_donor = {
@@ -2022,7 +2035,7 @@ def main():
     #     ["Upload File", "FEC API Search"]
     # )
     
-    processor = FECDataProcessor()
+    processor = FECDataProcessor(database_config=get_database_config())
     
     if input_method == "Upload File":
         st.sidebar.subheader("📁 File Upload")
@@ -2032,6 +2045,43 @@ def main():
             "Select file format:",
             ["FEC Quarterly Report", "State or Local Report"]
         )
+        
+        # Database selection options
+        st.sidebar.markdown("---")
+        st.sidebar.subheader("🗄️ Database Options")
+        st.sidebar.markdown("Choose which databases to include in analysis:")
+        
+        # Initialize database settings in session state if not present
+        if 'database_config' not in st.session_state:
+            st.session_state['database_config'] = {
+                'bad_donors': True,
+                'rga_donors': True, 
+                'bad_employers': True
+            }
+        
+        # Database selection checkboxes
+        db_config = st.session_state['database_config']
+        
+        db_config['bad_donors'] = st.sidebar.checkbox(
+            "Bad Donor Master (Insurrectionists & Jan 6th)", 
+            value=db_config['bad_donors'],
+            key='cb_bad_donors'
+        )
+        
+        db_config['rga_donors'] = st.sidebar.checkbox(
+            "RGA Donors (2023 & 2024)", 
+            value=db_config['rga_donors'],
+            key='cb_rga_donors'
+        )
+        
+        db_config['bad_employers'] = st.sidebar.checkbox(
+            "Bad Employer Master", 
+            value=db_config['bad_employers'],
+            key='cb_bad_employers'
+        )
+        
+        # Store updated config in session state
+        st.session_state['database_config'] = db_config
         
         # Show instructions for State or Local Report
         if file_format == "State or Local Report":
@@ -2168,7 +2218,7 @@ def main():
                             if file_format == "State or Local Report":
                                 # Use generic processor for mapped columns
                                 from generic_processor import GenericDataProcessor
-                                current_processor = GenericDataProcessor()
+                                current_processor = GenericDataProcessor(database_config=get_database_config())
                                 
                                 # Debug mode capture
                                 if getattr(st.session_state, 'debug_mode', False):

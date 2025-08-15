@@ -5,8 +5,14 @@ from difflib import SequenceMatcher
 from database import get_connection
 
 class GenericDataProcessor:
-    def __init__(self):
+    def __init__(self, database_config=None):
         self.conn = get_connection()
+        # Store database configuration (default to all enabled if none provided)
+        self.database_config = database_config or {
+            'bad_donors': True,
+            'rga_donors': True,
+            'bad_employers': True
+        }
     
     def process_generic_data(self, df, column_mapping):
         """
@@ -161,13 +167,19 @@ class GenericDataProcessor:
             }
             
             # Check against bad donor database
-            bad_donor_flags = self._check_bad_donors(donor_data)
+            bad_donor_flags = []
+            if self.database_config.get('bad_donors', True):
+                bad_donor_flags = self._check_bad_donors(donor_data)
             
             # Check against RGA donor database
-            rga_donor_flags = self._check_rga_donors(donor_data)
+            rga_donor_flags = []
+            if self.database_config.get('rga_donors', True):
+                rga_donor_flags = self._check_rga_donors(donor_data)
             
             # Check against bad employer database
-            bad_employer_flags = self._check_bad_employers(donor_data)
+            bad_employer_flags = []
+            if self.database_config.get('bad_employers', True):
+                bad_employer_flags = self._check_bad_employers(donor_data)
             
             # Check against bad legislation database
             bad_legislation_flags = self._check_bad_legislation(donor_data)
@@ -240,13 +252,19 @@ class GenericDataProcessor:
             }
             
             # Check against bad donor database
-            bad_donor_flags = self._check_bad_donors(donor_data)
+            bad_donor_flags = []
+            if self.database_config.get('bad_donors', True):
+                bad_donor_flags = self._check_bad_donors(donor_data)
             
             # Check against RGA donor database
-            rga_donor_flags = self._check_rga_donors(donor_data)
+            rga_donor_flags = []
+            if self.database_config.get('rga_donors', True):
+                rga_donor_flags = self._check_rga_donors(donor_data)
             
             # Check against bad employer database
-            bad_employer_flags = self._check_bad_employers(donor_data)
+            bad_employer_flags = []
+            if self.database_config.get('bad_employers', True):
+                bad_employer_flags = self._check_bad_employers(donor_data)
             
             # Check against bad legislation database
             bad_legislation_flags = self._check_bad_legislation(donor_data)

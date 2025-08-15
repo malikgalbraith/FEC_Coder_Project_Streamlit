@@ -5,8 +5,14 @@ from difflib import SequenceMatcher
 from database import get_connection
 
 class FECDataProcessor:
-    def __init__(self):
+    def __init__(self, database_config=None):
         self.conn = get_connection()
+        # Store database configuration (default to all enabled if none provided)
+        self.database_config = database_config or {
+            'bad_donors': True,
+            'rga_donors': True,
+            'bad_employers': True
+        }
         
         # FEC column name mappings to internal format
         self.fec_column_mapping = {
@@ -223,33 +229,35 @@ class FECDataProcessor:
             match_details = []
             
             # Check Bad Donors database with confidence levels
-            bad_donor_match = self.check_bad_donor_match(row)
-            if bad_donor_match:
-                flags.append(f"BAD_DONOR_{bad_donor_match['confidence']}")
-                confidence_info.append(bad_donor_match['confidence'])
-                
-                # Create detailed source info
-                source_text = f"{bad_donor_match['color']} {bad_donor_match['confidence']} CONFIDENCE - {bad_donor_match['match_type']}: {bad_donor_match['affiliation']}"
-                if bad_donor_match.get('additional_matches', 0) > 0:
-                    source_text += f" (+{bad_donor_match['additional_matches']} more matches)"
-                sources.append(source_text)
-                match_details.append(bad_donor_match)
+            if self.database_config.get('bad_donors', True):
+                bad_donor_match = self.check_bad_donor_match(row)
+                if bad_donor_match:
+                    flags.append(f"BAD_DONOR_{bad_donor_match['confidence']}")
+                    confidence_info.append(bad_donor_match['confidence'])
+                    
+                    # Create detailed source info
+                    source_text = f"{bad_donor_match['color']} {bad_donor_match['confidence']} CONFIDENCE - {bad_donor_match['match_type']}: {bad_donor_match['affiliation']}"
+                    if bad_donor_match.get('additional_matches', 0) > 0:
+                        source_text += f" (+{bad_donor_match['additional_matches']} more matches)"
+                    sources.append(source_text)
+                    match_details.append(bad_donor_match)
             
             # Check RGA Donors databases (separate from bad donors but show in same section)
-            rga_donor_match = self.check_rga_donor_match(row)
-            if rga_donor_match:
-                flags.append(f"BAD_DONOR_{rga_donor_match['confidence']}")
-                confidence_info.append(rga_donor_match['confidence'])
-                
-                # Create detailed source info
-                source_text = f"{rga_donor_match['color']} {rga_donor_match['confidence']} CONFIDENCE - {rga_donor_match['match_type']}: {rga_donor_match['affiliation']}"
-                if rga_donor_match.get('additional_matches', 0) > 0:
-                    source_text += f" (+{rga_donor_match['additional_matches']} more matches)"
-                sources.append(source_text)
-                match_details.append(rga_donor_match)
+            if self.database_config.get('rga_donors', True):
+                rga_donor_match = self.check_rga_donor_match(row)
+                if rga_donor_match:
+                    flags.append(f"BAD_DONOR_{rga_donor_match['confidence']}")
+                    confidence_info.append(rga_donor_match['confidence'])
+                    
+                    # Create detailed source info
+                    source_text = f"{rga_donor_match['color']} {rga_donor_match['confidence']} CONFIDENCE - {rga_donor_match['match_type']}: {rga_donor_match['affiliation']}"
+                    if rga_donor_match.get('additional_matches', 0) > 0:
+                        source_text += f" (+{rga_donor_match['additional_matches']} more matches)"
+                    sources.append(source_text)
+                    match_details.append(rga_donor_match)
             
             # Check Bad Employers database
-            if row['employer']:
+            if self.database_config.get('bad_employers', True) and row['employer']:
                 bad_employer_match = self.check_bad_employer_match(row['employer'])
                 if bad_employer_match:
                     flags.append('BAD_EMPLOYER')
