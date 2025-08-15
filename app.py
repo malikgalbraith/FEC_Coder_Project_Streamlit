@@ -387,6 +387,65 @@ def generate_email_report(flagged_donors):
     
     return "\n".join(report_lines)
 
+def generate_fec_financial_email_report():
+    """Generate email-ready financial summary for FEC reports"""
+    if ('fec_financial_data' not in st.session_state or 
+        'fec_derived_metrics' not in st.session_state or
+        'fec_committee_name' not in st.session_state):
+        return ""
+    
+    financial_data = st.session_state['fec_financial_data']
+    derived_metrics = st.session_state['fec_derived_metrics']
+    committee_name = st.session_state['fec_committee_name']
+    
+    # Get state and district info
+    filer_state = ""
+    filer_district = ""
+    if 'current_processor' in st.session_state and 'original_df' in st.session_state:
+        current_processor = st.session_state['current_processor']
+        original_df = st.session_state['original_df']
+        filer_info = current_processor.extract_filer_info(original_df)
+        filer_state = filer_info.get('filer_state', '')
+        filer_district = filer_info.get('filer_district', '')
+    
+    # Build email report
+    report_lines = []
+    
+    # Header with bold committee name
+    if filer_state and filer_district and committee_name:
+        report_lines.append(f"**{filer_state}-{filer_district} {committee_name}**\n")
+    elif committee_name:
+        report_lines.append(f"**{committee_name}**\n")
+    
+    # Financial metrics
+    report_lines.append(f"Receipts: ${financial_data.get('receipts', 0):,.2f}")
+    report_lines.append(f"Disbursements: ${financial_data.get('disbursements', 0):,.2f}")
+    report_lines.append(f"COH: ${financial_data.get('coh', 0):,.2f}")
+    report_lines.append(f"Debt: ${financial_data.get('debt', 0):,.2f}")
+    
+    # Only include loans if amount > 0
+    loans = financial_data.get('loans_by_candidate', 0)
+    if loans > 0:
+        report_lines.append(f"Loans by Candidate: ${loans:,.2f}")
+    
+    # Derived metrics
+    burn_rate = derived_metrics.get('burn_rate', 0)
+    small_donor_pct = derived_metrics.get('small_donor_percentage', 0)
+    
+    report_lines.append(f"Burn Rate: {burn_rate:.1f}%")
+    report_lines.append(f"% from Small Donors: {small_donor_pct:.1f}%")
+    
+    # Additional metrics
+    total_contributions = derived_metrics.get('total_individual_contributions', 0)
+    median_contribution = derived_metrics.get('median_contribution', 0)
+    max_out_donors = derived_metrics.get('max_out_donors', 0)
+    
+    report_lines.append(f"Total Individual Contributions: {total_contributions:,}")
+    report_lines.append(f"Median Individual Contribution: ${median_contribution:.2f}")
+    report_lines.append(f"Max Out Donors: {max_out_donors:,}")
+    
+    return "\n".join(report_lines)
+
 def display_dashboard_cards(flagged_donors):
     """Display dashboard summary cards for different priority levels"""
     if flagged_donors.empty:
@@ -1743,10 +1802,22 @@ def display_results(results):
                 original_df = st.session_state['original_df']
                 current_processor = st.session_state['current_processor']
                 
-                # Extract filer information
+                # Extract filer information and financial data
                 filer_info = current_processor.extract_filer_info(original_df)
                 filer_state = filer_info.get('filer_state')
                 filer_district = filer_info.get('filer_district')
+                committee_name = filer_info.get('committee_name')
+                financial_data = filer_info.get('financial_data', {})
+                
+                # Calculate derived metrics for FEC data
+                derived_metrics = {}
+                if hasattr(current_processor, 'calculate_derived_metrics'):
+                    derived_metrics = current_processor.calculate_derived_metrics(financial_data, bad_donors_df)
+                
+                # Store financial data in session state for use across tabs
+                st.session_state['fec_financial_data'] = financial_data
+                st.session_state['fec_derived_metrics'] = derived_metrics
+                st.session_state['fec_committee_name'] = committee_name
                 
                 # For generic data, use user-selected focus state if available
                 raw_focus_state = st.session_state.get('geographic_focus_state', '').upper().strip()
@@ -1869,13 +1940,13 @@ def display_results(results):
                     (bad_donors_df['amount_numeric'] <= upper_bound)
                 ])
             
-            # Calculate percentage of donors in target state
+            # Calculate percentage of contributions in target state (by dollar amount)
             state_percentage = 0
             if target_state and not state_totals.empty:
-                target_state_donors = state_totals[state_totals['state'] == target_state]['contributor_count'].sum()
-                total_donors = state_totals['contributor_count'].sum()
-                if total_donors > 0:
-                    state_percentage = (target_state_donors / total_donors) * 100
+                target_state_amount = state_totals[state_totals['state'] == target_state]['total_amount'].sum()
+                total_amount = state_totals['total_amount'].sum()
+                if total_amount > 0:
+                    state_percentage = (target_state_amount / total_amount) * 100
             
             # Get top 3 donor states
             top_3_states = []
@@ -1936,12 +2007,12 @@ def display_results(results):
             with col5:
                 if target_state:
                     st.metric(
-                        f"% Donors in {target_state}", 
+                        f"% Contributions in {target_state}", 
                         f"{state_percentage:.1f}%",
-                        help=f"Percentage of all donors from {target_state}"
+                        help=f"Percentage of total contribution dollars from {target_state}"
                     )
                 else:
-                    st.metric("% Donors in State", "Set focus state", help="Set geographic focus state in column mapping section")
+                    st.metric("% Contributions in State", "Set focus state", help="Set geographic focus state in column mapping section")
             
             with col6:
                 if len(top_3_states) >= 1:
@@ -2012,6 +2083,148 @@ def display_results(results):
                         st.caption("📊 Number of contributions received each day")
                     else:
                         st.line_chart(daily_donors.set_index('Date')['Cumulative_Donors'])
+                        st.caption("📈 Cumulative total of contributions over time")
+                else:
+                    st.info("No valid dates found for time series analysis")
+            else:
+                st.info("💡 Date information not available for time series analysis")
+            
+            st.markdown("---")
+        
+        # FEC Financial Summary Section (only for FEC data)
+        if ('file_format' in st.session_state and 
+            st.session_state.file_format == "FEC Quarterly Report" and
+            'fec_financial_data' in st.session_state and
+            'fec_derived_metrics' in st.session_state):
+            
+            financial_data = st.session_state['fec_financial_data']
+            derived_metrics = st.session_state['fec_derived_metrics']
+            
+            st.markdown("### 💰 Financial Summary")
+            
+            # First row of financial metrics
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric(
+                    "Receipts", 
+                    f"${financial_data.get('receipts', 0):,.2f}",
+                    help="Total receipts from FEC filing"
+                )
+            
+            with col2:
+                st.metric(
+                    "Disbursements", 
+                    f"${financial_data.get('disbursements', 0):,.2f}",
+                    help="Total disbursements from FEC filing"
+                )
+            
+            with col3:
+                st.metric(
+                    "Cash on Hand", 
+                    f"${financial_data.get('coh', 0):,.2f}",
+                    help="Cash on hand at end of reporting period"
+                )
+            
+            with col4:
+                st.metric(
+                    "Debt", 
+                    f"${financial_data.get('debt', 0):,.2f}",
+                    help="Outstanding debt"
+                )
+            
+            # Second row of financial metrics
+            col5, col6, col7, col8 = st.columns(4)
+            
+            with col5:
+                st.metric(
+                    "Loans by Candidate", 
+                    f"${financial_data.get('loans_by_candidate', 0):,.2f}",
+                    help="Loans made by the candidate to the committee"
+                )
+            
+            with col6:
+                burn_rate = derived_metrics.get('burn_rate', 0)
+                st.metric(
+                    "Burn Rate", 
+                    f"{burn_rate:.1f}%",
+                    help="Disbursements as percentage of receipts"
+                )
+            
+            with col7:
+                small_donor_pct = derived_metrics.get('small_donor_percentage', 0)
+                st.metric(
+                    "% from Small Donors", 
+                    f"{small_donor_pct:.1f}%",
+                    help="Small donor contributions as percentage of total receipts"
+                )
+            
+            with col8:
+                max_out_donors = derived_metrics.get('max_out_donors', 0)
+                st.metric(
+                    "Max Out Donors", 
+                    f"{max_out_donors:,}",
+                    help="Donors who gave $3,400-$3,600 (max contribution range)"
+                )
+            
+            # Third row - additional metrics
+            col9, col10, col11, col12 = st.columns(4)
+            
+            with col9:
+                total_contributions = derived_metrics.get('total_individual_contributions', 0)
+                st.metric(
+                    "Total Individual Contributions", 
+                    f"{total_contributions:,}",
+                    help="Total number of individual contributions"
+                )
+            
+            with col10:
+                median_contribution = derived_metrics.get('median_contribution', 0)
+                st.metric(
+                    "Median Contribution", 
+                    f"${median_contribution:.2f}",
+                    help="Median individual contribution amount"
+                )
+            
+            # FEC Financial Email Report
+            st.markdown("### 📧 Financial Email Report")
+            fec_email_report = generate_fec_financial_email_report()
+            if fec_email_report:
+                st.text_area(
+                    "Copy and paste financial summary:",
+                    value=fec_email_report,
+                    height=200,
+                    help="Ready-to-send financial summary for email"
+                )
+            
+            # Add time series for FEC reports too
+            if 'date' in bad_donors_df.columns and not bad_donors_df['date'].isna().all():
+                st.markdown("### 📈 Contributions Over Time")
+                
+                # Convert dates and create time series
+                df_with_dates = bad_donors_df.copy()
+                df_with_dates['date'] = pd.to_datetime(df_with_dates['date'], errors='coerce')
+                df_with_dates = df_with_dates.dropna(subset=['date'])
+                
+                if not df_with_dates.empty:
+                    # Group by date and count contributions
+                    daily_contributions = df_with_dates.groupby(df_with_dates['date'].dt.date).agg({
+                        'first_name': 'count'  # Count contributions per day
+                    }).reset_index()
+                    daily_contributions.columns = ['Date', 'Contributions']
+                    
+                    # Create cumulative contributions over time
+                    daily_contributions = daily_contributions.sort_values('Date')
+                    daily_contributions['Cumulative_Contributions'] = daily_contributions['Contributions'].cumsum()
+                    
+                    # Display both daily and cumulative charts
+                    chart_type = st.radio("Chart Type:", ["Daily Contributions", "Cumulative Total"], horizontal=True, key="fec_chart_type")
+                    
+                    if chart_type == "Daily Contributions":
+                        st.line_chart(daily_contributions.set_index('Date')['Contributions'])
+                        st.caption("📊 Number of contributions received each day")
+                    else:
+                        st.line_chart(daily_contributions.set_index('Date')['Cumulative_Contributions'])
                         st.caption("📈 Cumulative total of contributions over time")
                 else:
                     st.info("No valid dates found for time series analysis")

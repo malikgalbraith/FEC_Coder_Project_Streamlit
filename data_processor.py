@@ -700,7 +700,7 @@ class FECDataProcessor:
         return result[0] if result else None
     
     def extract_filer_info(self, df):
-        """Extract filer state and district from F3N row (row 2)"""
+        """Extract filer state, district, and financial data from F3N row (row 2)"""
         try:
             # Look for F3N row (usually row 2, but search to be safe)
             f3n_row = None
@@ -714,14 +714,106 @@ class FECDataProcessor:
                 filer_state = str(f3n_row.get('J', '')).strip().upper()
                 filer_district = str(f3n_row.get('K', '')).strip()
                 
+                # Extract committee name (Column C)
+                committee_name = str(f3n_row.get('C', '')).strip()
+                
+                # Extract financial data with safe conversion to float
+                def safe_float_convert(value):
+                    try:
+                        if pd.isna(value) or str(value).strip() == '':
+                            return 0.0
+                        return float(str(value).replace(',', '').replace('$', ''))
+                    except (ValueError, TypeError):
+                        return 0.0
+                
+                receipts = safe_float_convert(f3n_row.get('BG', 0))
+                disbursements = safe_float_convert(f3n_row.get('BI', 0))
+                coh = safe_float_convert(f3n_row.get('BJ', 0))
+                debt = safe_float_convert(f3n_row.get('AF', 0))
+                loans_by_candidate = safe_float_convert(f3n_row.get('AO', 0))
+                small_donors_amount = safe_float_convert(f3n_row.get('AH', 0))
+                
                 return {
                     'filer_state': filer_state if filer_state else None,
-                    'filer_district': filer_district if filer_district else None
+                    'filer_district': filer_district if filer_district else None,
+                    'committee_name': committee_name if committee_name else None,
+                    'financial_data': {
+                        'receipts': receipts,
+                        'disbursements': disbursements,
+                        'coh': coh,
+                        'debt': debt,
+                        'loans_by_candidate': loans_by_candidate,
+                        'small_donors_amount': small_donors_amount
+                    }
                 }
         except Exception as e:
             print(f"Error extracting filer info: {e}")
         
-        return {'filer_state': None, 'filer_district': None}
+        return {
+            'filer_state': None, 
+            'filer_district': None,
+            'committee_name': None,
+            'financial_data': {
+                'receipts': 0.0,
+                'disbursements': 0.0,
+                'coh': 0.0,
+                'debt': 0.0,
+                'loans_by_candidate': 0.0,
+                'small_donors_amount': 0.0
+            }
+        }
+    
+    def calculate_derived_metrics(self, financial_data, bad_donors_df):
+        """Calculate derived metrics from financial data and donor data"""
+        try:
+            # Extract financial values
+            receipts = financial_data.get('receipts', 0)
+            disbursements = financial_data.get('disbursements', 0)
+            small_donors_amount = financial_data.get('small_donors_amount', 0)
+            
+            # Calculate burn rate
+            burn_rate = 0
+            if receipts > 0:
+                burn_rate = (disbursements / receipts) * 100
+            
+            # Calculate % from small donors  
+            small_donor_percentage = 0
+            if receipts > 0:
+                small_donor_percentage = (small_donors_amount / receipts) * 100
+            
+            # Calculate additional metrics from donor data
+            total_individual_contributions = len(bad_donors_df) if not bad_donors_df.empty else 0
+            
+            # Calculate median individual contribution
+            median_contribution = 0
+            if not bad_donors_df.empty and 'amount_numeric' in bad_donors_df.columns:
+                median_contribution = bad_donors_df['amount_numeric'].median()
+            
+            # Calculate max out donors ($3,400 - $3,600 range)
+            max_out_donors = 0
+            if not bad_donors_df.empty and 'amount_numeric' in bad_donors_df.columns:
+                max_out_donors = len(bad_donors_df[
+                    (bad_donors_df['amount_numeric'] >= 3400) & 
+                    (bad_donors_df['amount_numeric'] <= 3600)
+                ])
+            
+            return {
+                'burn_rate': burn_rate,
+                'small_donor_percentage': small_donor_percentage,
+                'total_individual_contributions': total_individual_contributions,
+                'median_contribution': median_contribution,
+                'max_out_donors': max_out_donors
+            }
+            
+        except Exception as e:
+            print(f"Error calculating derived metrics: {e}")
+            return {
+                'burn_rate': 0,
+                'small_donor_percentage': 0,
+                'total_individual_contributions': 0,
+                'median_contribution': 0,
+                'max_out_donors': 0
+            }
     
     def get_geographic_analysis(self, bad_donors_df):
         """Analyze geographic distribution of individual donors"""
