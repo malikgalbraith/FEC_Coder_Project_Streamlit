@@ -1832,7 +1832,181 @@ def display_results(results):
     with tab3:
         st.subheader("Analysis Summary")
         
-        # Top row metrics
+        # Input for max donors threshold (for state/local reports)
+        if 'file_format' in st.session_state and st.session_state.file_format == "State or Local Report":
+            st.sidebar.markdown("---")
+            st.sidebar.subheader("📊 Analysis Settings")
+            max_donors_target = st.sidebar.number_input(
+                "Max Donors Threshold",
+                value=2800,
+                min_value=1,
+                max_value=10000,
+                help="Enter the maximum number of donors allowed for comparison"
+            )
+            
+            target_state = st.sidebar.text_input(
+                "Target State",
+                value=filer_state if 'filer_state' in locals() and filer_state else "",
+                help="Enter the 2-letter state code for percentage calculations"
+            ).upper().strip()
+        else:
+            max_donors_target = 2800
+            target_state = ""
+        
+        # Calculate enhanced metrics for state/local reports
+        if not bad_donors_df.empty:
+            # Get geographic data for calculations
+            if 'current_processor' in locals():
+                geographic_data = current_processor.get_geographic_analysis(bad_donors_df)
+                state_totals = geographic_data['state_totals']
+            else:
+                state_totals = pd.DataFrame()
+            
+            # Calculate recurring donors (3+ contributions)
+            recurring_donors = 0
+            if 'contribution_count' in bad_donors_df.columns:
+                recurring_donors = len(bad_donors_df[bad_donors_df['contribution_count'] >= 3])
+            
+            # Calculate median donation amount
+            median_amount = 0
+            if 'amount_numeric' in bad_donors_df.columns:
+                median_amount = bad_donors_df['amount_numeric'].median()
+            
+            # Calculate percentage of donors in target state
+            state_percentage = 0
+            if target_state and not state_totals.empty:
+                target_state_donors = state_totals[state_totals['state'] == target_state]['contributor_count'].sum()
+                total_donors = state_totals['contributor_count'].sum()
+                if total_donors > 0:
+                    state_percentage = (target_state_donors / total_donors) * 100
+            
+            # Get top 3 donor states
+            top_3_states = []
+            if not state_totals.empty:
+                top_3_states = state_totals.head(3)[['state', 'contributor_count']].values.tolist()
+            
+            # Count RGA donors
+            rga_donors_count = 0
+            if 'flags' in bad_donors_df.columns:
+                rga_donors_count = len(bad_donors_df[bad_donors_df['flags'].str.contains('RGA', na=False)])
+        
+        # Enhanced metrics row for state/local reports
+        if 'file_format' in st.session_state and st.session_state.file_format == "State or Local Report":
+            st.markdown("### 📈 Enhanced Donor Analytics")
+            
+            # First row of enhanced metrics
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                if target_state:
+                    st.metric(
+                        f"% Donors in {target_state}", 
+                        f"{state_percentage:.1f}%",
+                        help=f"Percentage of all donors from {target_state}"
+                    )
+                else:
+                    st.metric("% Donors in State", "Set target state", help="Enter target state in sidebar")
+            
+            with col2:
+                st.metric(
+                    "Recurring Donors", 
+                    recurring_donors,
+                    help="Donors who gave 3 or more times"
+                )
+            
+            with col3:
+                st.metric(
+                    "Median Donation", 
+                    f"${median_amount:,.2f}" if median_amount > 0 else "$0.00",
+                    help="Median amount across all contributions"
+                )
+            
+            with col4:
+                max_donors_status = "✅ Under" if len(bad_donors_df) <= max_donors_target else "⚠️ Over"
+                st.metric(
+                    "Max Donors Check", 
+                    f"{max_donors_status} ({len(bad_donors_df)}/{max_donors_target})",
+                    help=f"Total donors vs max threshold of {max_donors_target}"
+                )
+            
+            # Second row of enhanced metrics
+            col5, col6, col7, col8 = st.columns(4)
+            
+            with col5:
+                st.metric(
+                    "RGA Donors", 
+                    rga_donors_count,
+                    help="Donors flagged in RGA database"
+                )
+            
+            with col6:
+                if len(top_3_states) >= 1:
+                    st.metric(
+                        f"Top State: {top_3_states[0][0]}", 
+                        f"{top_3_states[0][1]} donors",
+                        help="State with most donors"
+                    )
+                else:
+                    st.metric("Top State", "N/A")
+            
+            with col7:
+                if len(top_3_states) >= 2:
+                    st.metric(
+                        f"2nd: {top_3_states[1][0]}", 
+                        f"{top_3_states[1][1]} donors",
+                        help="Second highest donor state"
+                    )
+                else:
+                    st.metric("2nd State", "N/A")
+            
+            with col8:
+                if len(top_3_states) >= 3:
+                    st.metric(
+                        f"3rd: {top_3_states[2][0]}", 
+                        f"{top_3_states[2][1]} donors",
+                        help="Third highest donor state"
+                    )
+                else:
+                    st.metric("3rd State", "N/A")
+            
+            # Donors over time line chart
+            if 'date' in bad_donors_df.columns and not bad_donors_df['date'].isna().all():
+                st.markdown("### 📈 Donors Over Time")
+                
+                # Convert dates and create time series
+                df_with_dates = bad_donors_df.copy()
+                df_with_dates['date'] = pd.to_datetime(df_with_dates['date'], errors='coerce')
+                df_with_dates = df_with_dates.dropna(subset=['date'])
+                
+                if not df_with_dates.empty:
+                    # Group by date and count unique donors
+                    daily_donors = df_with_dates.groupby(df_with_dates['date'].dt.date).agg({
+                        'first_name': 'count'  # Count contributions per day
+                    }).reset_index()
+                    daily_donors.columns = ['Date', 'Contributions']
+                    
+                    # Create cumulative donors over time
+                    daily_donors = daily_donors.sort_values('Date')
+                    daily_donors['Cumulative_Donors'] = daily_donors['Contributions'].cumsum()
+                    
+                    # Display both daily and cumulative charts
+                    chart_type = st.radio("Chart Type:", ["Daily Contributions", "Cumulative Total"], horizontal=True)
+                    
+                    if chart_type == "Daily Contributions":
+                        st.line_chart(daily_donors.set_index('Date')['Contributions'])
+                        st.caption("📊 Number of contributions received each day")
+                    else:
+                        st.line_chart(daily_donors.set_index('Date')['Cumulative_Donors'])
+                        st.caption("📈 Cumulative total of contributions over time")
+                else:
+                    st.info("No valid dates found for time series analysis")
+            else:
+                st.info("💡 Date information not available for time series analysis")
+            
+            st.markdown("---")
+        
+        # Standard metrics row
+        st.markdown("### 📊 Standard Analysis Metrics")
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
@@ -2059,6 +2233,9 @@ def main():
             "Select file format:",
             ["FEC Quarterly Report", "State or Local Report"]
         )
+        
+        # Store file format in session state for summary page access
+        st.session_state.file_format = file_format
         
         # Database selection options
         st.sidebar.markdown("---")
