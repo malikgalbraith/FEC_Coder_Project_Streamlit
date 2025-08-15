@@ -705,17 +705,30 @@ class FECDataProcessor:
             # Look for F3N row (usually row 2, but search to be safe)
             f3n_row = None
             for _, row in df.iterrows():
-                if str(row.get('A', '')).strip().upper().startswith('F3N'):
+                # Try column 'A' first (Excel format), then position 0 (CSV format)
+                first_col_value = str(row.get('A', row.iloc[0] if len(row) > 0 else '')).strip().upper()
+                if first_col_value.startswith('F3N'):
                     f3n_row = row
                     break
             
             if f3n_row is not None:
-                # Extract filer state (Column J) and district (Column K)
-                filer_state = str(f3n_row.get('J', '')).strip().upper()
-                filer_district = str(f3n_row.get('K', '')).strip()
+                # Determine if this is Excel format (letter columns) or CSV format (numeric positions)
+                is_excel_format = 'J' in f3n_row.index if hasattr(f3n_row, 'index') else False
                 
-                # Extract committee name (Column C)
-                committee_name = str(f3n_row.get('C', '')).strip()
+                if is_excel_format:
+                    # Excel format - use letter column references
+                    filer_state = str(f3n_row.get('J', '')).strip().upper()
+                    filer_district = str(f3n_row.get('K', '')).strip()
+                    committee_name = str(f3n_row.get('C', '')).strip()
+                else:
+                    # CSV format - use numeric positions (0-indexed)
+                    # J = 10 (0-indexed = 9), K = 11 (0-indexed = 10), C = 3 (0-indexed = 2)
+                    try:
+                        filer_state = str(f3n_row.iloc[9] if len(f3n_row) > 9 else '').strip().upper()  # Column J
+                        filer_district = str(f3n_row.iloc[10] if len(f3n_row) > 10 else '').strip()  # Column K
+                        committee_name = str(f3n_row.iloc[2] if len(f3n_row) > 2 else '').strip()  # Column C
+                    except (IndexError, KeyError):
+                        filer_state = filer_district = committee_name = ''
                 
                 # Extract financial data with safe conversion to float
                 def safe_float_convert(value):
@@ -726,12 +739,27 @@ class FECDataProcessor:
                     except (ValueError, TypeError):
                         return 0.0
                 
-                receipts = safe_float_convert(f3n_row.get('BG', 0))
-                disbursements = safe_float_convert(f3n_row.get('BI', 0))
-                coh = safe_float_convert(f3n_row.get('BJ', 0))
-                debt = safe_float_convert(f3n_row.get('AF', 0))
-                loans_by_candidate = safe_float_convert(f3n_row.get('AO', 0))
-                small_donors_amount = safe_float_convert(f3n_row.get('AH', 0))
+                if is_excel_format:
+                    # Excel format - use letter column references
+                    receipts = safe_float_convert(f3n_row.get('BG', 0))
+                    disbursements = safe_float_convert(f3n_row.get('BI', 0))
+                    coh = safe_float_convert(f3n_row.get('BJ', 0))
+                    debt = safe_float_convert(f3n_row.get('AF', 0))
+                    loans_by_candidate = safe_float_convert(f3n_row.get('AO', 0))
+                    small_donors_amount = safe_float_convert(f3n_row.get('AH', 0))
+                else:
+                    # CSV format - use numeric positions (0-indexed, +1 offset correction)
+                    # User specified column mapping: AF=32, AH=34, AO=41, BG=59, BI=61, BJ=62
+                    try:
+                        debt = safe_float_convert(f3n_row.iloc[32] if len(f3n_row) > 32 else 0)  # AF = 32 (0-indexed = 32)
+                        small_donors_amount = safe_float_convert(f3n_row.iloc[34] if len(f3n_row) > 34 else 0)  # AH = 34 (0-indexed = 34)
+                        loans_by_candidate = safe_float_convert(f3n_row.iloc[41] if len(f3n_row) > 41 else 0)  # AO = 41 (0-indexed = 41)
+                        receipts = safe_float_convert(f3n_row.iloc[59] if len(f3n_row) > 59 else 0)  # BG = 59 (0-indexed = 59)
+                        disbursements = safe_float_convert(f3n_row.iloc[61] if len(f3n_row) > 61 else 0)  # BI = 61 (0-indexed = 61)
+                        coh = safe_float_convert(f3n_row.iloc[62] if len(f3n_row) > 62 else 0)  # BJ = 62 (0-indexed = 62)
+                    except (IndexError, KeyError):
+                        # Fallback to zeros if positions don't exist
+                        receipts = disbursements = coh = debt = loans_by_candidate = small_donors_amount = 0
                 
                 return {
                     'filer_state': filer_state if filer_state else None,
@@ -782,16 +810,38 @@ class FECDataProcessor:
                 small_donor_percentage = (small_donors_amount / receipts) * 100
             
             # Calculate additional metrics from donor data
-            total_individual_contributions = len(bad_donors_df) if not bad_donors_df.empty else 0
+            # For total contributions, sum up contribution_count from all donors
+            total_individual_contributions = 0
+            if not bad_donors_df.empty and 'contribution_count' in bad_donors_df.columns:
+                total_individual_contributions = bad_donors_df['contribution_count'].sum()
+            else:
+                total_individual_contributions = len(bad_donors_df) if not bad_donors_df.empty else 0
             
-            # Calculate median individual contribution
+            # Calculate median individual contribution using individual amounts
             median_contribution = 0
-            if not bad_donors_df.empty and 'amount_numeric' in bad_donors_df.columns:
+            if not bad_donors_df.empty and 'contribution_amounts' in bad_donors_df.columns:
+                # Flatten all individual contribution amounts
+                all_amounts = []
+                for amounts_list in bad_donors_df['contribution_amounts'].dropna():
+                    if isinstance(amounts_list, list):
+                        all_amounts.extend(amounts_list)
+                if all_amounts:
+                    median_contribution = pd.Series(all_amounts).median()
+            elif not bad_donors_df.empty and 'amount_numeric' in bad_donors_df.columns:
+                # Fallback to grouped amounts if individual amounts not available
                 median_contribution = bad_donors_df['amount_numeric'].median()
             
-            # Calculate max out donors ($3,400 - $3,600 range)
+            # Calculate max out donors using individual contribution amounts
             max_out_donors = 0
-            if not bad_donors_df.empty and 'amount_numeric' in bad_donors_df.columns:
+            if not bad_donors_df.empty and 'contribution_amounts' in bad_donors_df.columns:
+                # Check individual contributions in the $3,400 - $3,600 range
+                for amounts_list in bad_donors_df['contribution_amounts'].dropna():
+                    if isinstance(amounts_list, list):
+                        for amount in amounts_list:
+                            if 3400 <= amount <= 3600:
+                                max_out_donors += 1
+            elif not bad_donors_df.empty and 'amount_numeric' in bad_donors_df.columns:
+                # Fallback to grouped amounts (though this won't be as accurate)
                 max_out_donors = len(bad_donors_df[
                     (bad_donors_df['amount_numeric'] >= 3400) & 
                     (bad_donors_df['amount_numeric'] <= 3600)
