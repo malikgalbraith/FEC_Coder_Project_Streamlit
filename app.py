@@ -1919,19 +1919,20 @@ def display_results(results):
                             # Create options list with current state at top
                             dropdown_options = [current_display] + available_states
                             
+                            def on_state_change():
+                                """Callback for state dropdown change"""
+                                selected = st.session_state.state_dropdown_switcher
+                                if selected != current_display:
+                                    new_state = selected[:2]
+                                    st.session_state['geographic_focus_state'] = new_state
+                            
                             selected_state_option = st.selectbox(
                                 "🗺️ Quick Switch to Another State:",
                                 options=dropdown_options,
                                 key="state_dropdown_switcher",
-                                help="Select a different state to view its contribution map"
+                                help="Select a different state to view its contribution map",
+                                on_change=on_state_change
                             )
-                            
-                            # Extract state code from selection (first 2 characters)
-                            if selected_state_option != current_display:
-                                new_state = selected_state_option[:2]
-                                if new_state != display_state:
-                                    st.session_state['geographic_focus_state'] = new_state
-                                    st.rerun()
                         
                     elif not geographic_data['zip_data'].empty:
                         st.info("💡 Tip: Enter a focus state above to see ZIP code detail map")
