@@ -1989,7 +1989,13 @@ def main():
             sys.stdout = captured_output = StringIO()
             
             try:
-                processor = GenericDataProcessor(database_config=get_database_config())
+                # Initialize processor with backward compatibility
+                try:
+                    processor = GenericDataProcessor(database_config=get_database_config())
+                except TypeError:
+                    processor = GenericDataProcessor()
+                    if hasattr(processor, 'database_config'):
+                        processor.database_config = get_database_config()
                 
                 # Test with known RGA donor
                 test_donor = {
@@ -2035,7 +2041,15 @@ def main():
     #     ["Upload File", "FEC API Search"]
     # )
     
-    processor = FECDataProcessor(database_config=get_database_config())
+    # Initialize processor with backward compatibility for database_config
+    try:
+        processor = FECDataProcessor(database_config=get_database_config())
+    except TypeError:
+        # Fallback for older version without database_config parameter
+        processor = FECDataProcessor()
+        # Set database_config manually if the processor has the attribute
+        if hasattr(processor, 'database_config'):
+            processor.database_config = get_database_config()
     
     if input_method == "Upload File":
         st.sidebar.subheader("📁 File Upload")
@@ -2218,7 +2232,13 @@ def main():
                             if file_format == "State or Local Report":
                                 # Use generic processor for mapped columns
                                 from generic_processor import GenericDataProcessor
-                                current_processor = GenericDataProcessor(database_config=get_database_config())
+                                # Initialize processor with backward compatibility
+                                try:
+                                    current_processor = GenericDataProcessor(database_config=get_database_config())
+                                except TypeError:
+                                    current_processor = GenericDataProcessor()
+                                    if hasattr(current_processor, 'database_config'):
+                                        current_processor.database_config = get_database_config()
                                 
                                 # Debug mode capture
                                 if getattr(st.session_state, 'debug_mode', False):
