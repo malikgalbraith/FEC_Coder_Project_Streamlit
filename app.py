@@ -1525,7 +1525,7 @@ def create_folium_state_map(zip_data_df, filer_state):
              border-radius: 8px;
              box-shadow: 0 2px 5px rgba(0,0,0,0.3);">
         <b style="color: #000;">Contribution Amount ($)</b><br>
-        <div style="background: linear-gradient(to right, #440154, #3b518b, #21908c, #5dc863, #fde725); 
+        <div style="background: linear-gradient(to right, #440154, #3b518b, #21908c, #f97306, #e31a1c); 
              height: 15px; 
              margin: 8px 0;
              border: 1px solid #ccc;
