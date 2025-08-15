@@ -180,6 +180,28 @@ def get_viridis_color(amount, min_amount, max_amount):
         
         return rgb_to_hex(interpolated_rgb)
 
+def get_available_states_for_dropdown(geographic_data):
+    """Extract and format available states from geographic data for dropdown"""
+    if geographic_data is None or 'state_totals' not in geographic_data:
+        return []
+    
+    state_totals = geographic_data['state_totals']
+    if state_totals.empty:
+        return []
+    
+    # Sort by total amount descending to show most active states first
+    sorted_states = state_totals.sort_values('total_amount', ascending=False)
+    
+    # Format as "STATE - $amount (count contributors)"
+    formatted_states = []
+    for _, row in sorted_states.iterrows():
+        state_code = row['state']
+        amount = row['total_amount']
+        count = row['contributor_count']
+        formatted_states.append(f"{state_code} - ${amount:,.0f} ({count:,} contributors)")
+    
+    return formatted_states
+
 def initialize_database():
     """Initialize database if it doesn't exist"""
     if not os.path.exists("fec_master.db"):
@@ -1887,6 +1909,30 @@ def display_results(results):
                             
                             # Add info about the enhanced features
                             st.caption("🗺️ Interactive map with built-in city labels, roads, and street networks")
+                        
+                        # Add state dropdown for quick switching
+                        available_states = get_available_states_for_dropdown(geographic_data)
+                        if available_states:
+                            st.markdown("---")
+                            current_display = f"Current: {display_state}" if display_state else "No state selected"
+                            
+                            # Create options list with current state at top
+                            dropdown_options = [current_display] + available_states
+                            
+                            selected_state_option = st.selectbox(
+                                "🗺️ Quick Switch to Another State:",
+                                options=dropdown_options,
+                                key="state_dropdown_switcher",
+                                help="Select a different state to view its contribution map"
+                            )
+                            
+                            # Extract state code from selection (first 2 characters)
+                            if selected_state_option != current_display:
+                                new_state = selected_state_option[:2]
+                                if new_state != display_state:
+                                    st.session_state['geographic_focus_state'] = new_state
+                                    st.rerun()
+                        
                     elif not geographic_data['zip_data'].empty:
                         st.info("💡 Tip: Enter a focus state above to see ZIP code detail map")
                     else:
