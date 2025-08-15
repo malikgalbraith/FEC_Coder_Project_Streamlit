@@ -1832,26 +1832,13 @@ def display_results(results):
     with tab3:
         st.subheader("Analysis Summary")
         
-        # Input for max donors threshold (for state/local reports)
-        if 'file_format' in st.session_state and st.session_state.file_format == "State or Local Report":
-            st.sidebar.markdown("---")
-            st.sidebar.subheader("📊 Analysis Settings")
-            max_donors_target = st.sidebar.number_input(
-                "Max Donors Threshold",
-                value=2800,
-                min_value=1,
-                max_value=10000,
-                help="Enter the maximum number of donors allowed for comparison"
-            )
-            
-            target_state = st.sidebar.text_input(
-                "Target State",
-                value=filer_state if 'filer_state' in locals() and filer_state else "",
-                help="Enter the 2-letter state code for percentage calculations"
-            ).upper().strip()
-        else:
-            max_donors_target = 2800
-            target_state = ""
+        # Get target state from existing geographic focus state (used for ZIP maps)
+        target_state = st.session_state.get('geographic_focus_state', '').upper().strip()
+        if not target_state and 'filer_state' in locals() and filer_state:
+            target_state = filer_state
+        
+        # Get target donation amount from session state (set in geographic settings)
+        target_donation_amount = st.session_state.get('target_donation_amount', 2800)
         
         # Calculate enhanced metrics for state/local reports
         if not bad_donors_df.empty:
@@ -1872,6 +1859,16 @@ def display_results(results):
             if 'amount_numeric' in bad_donors_df.columns:
                 median_amount = bad_donors_df['amount_numeric'].median()
             
+            # Calculate max donors (within +/- $100 of target amount)
+            max_donors_count = 0
+            if 'amount_numeric' in bad_donors_df.columns:
+                lower_bound = target_donation_amount - 100
+                upper_bound = target_donation_amount + 100
+                max_donors_count = len(bad_donors_df[
+                    (bad_donors_df['amount_numeric'] >= lower_bound) & 
+                    (bad_donors_df['amount_numeric'] <= upper_bound)
+                ])
+            
             # Calculate percentage of donors in target state
             state_percentage = 0
             if target_state and not state_totals.empty:
@@ -1885,19 +1882,58 @@ def display_results(results):
             if not state_totals.empty:
                 top_3_states = state_totals.head(3)[['state', 'contributor_count']].values.tolist()
             
-            # Count RGA donors
+            # Count RGA donors - check both flags and flag_sources
             rga_donors_count = 0
-            if 'flags' in bad_donors_df.columns:
+            if 'flag_sources' in bad_donors_df.columns:
+                # RGA donors are identified in flag_sources as 'RGA Donor'
+                rga_donors_count = len(bad_donors_df[bad_donors_df['flag_sources'].str.contains('RGA Donor', na=False)])
+            elif 'flags' in bad_donors_df.columns:
+                # Fallback to checking flags column
                 rga_donors_count = len(bad_donors_df[bad_donors_df['flags'].str.contains('RGA', na=False)])
         
         # Enhanced metrics row for state/local reports
         if 'file_format' in st.session_state and st.session_state.file_format == "State or Local Report":
             st.markdown("### 📈 Enhanced Donor Analytics")
             
-            # First row of enhanced metrics
+            # First row of enhanced metrics: Total Donors, Median Donation, Max Donors, RGA Donors
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
+                total_individuals = len(bad_donors_df)
+                total_contributions = bad_donors_df['contribution_count'].sum() if 'contribution_count' in bad_donors_df.columns else total_individuals
+                st.metric(
+                    "Total Donors", 
+                    total_individuals,
+                    help=f"Total contributions: {total_contributions}"
+                )
+            
+            with col2:
+                st.metric(
+                    "Median Donation", 
+                    f"${median_amount:,.2f}" if median_amount > 0 else "$0.00",
+                    help="Median amount across all contributions"
+                )
+            
+            with col3:
+                lower_bound = target_donation_amount - 100
+                upper_bound = target_donation_amount + 100
+                st.metric(
+                    "Max Donors", 
+                    max_donors_count,
+                    help=f"Donors who gave ${lower_bound:,.0f}-${upper_bound:,.0f}"
+                )
+            
+            with col4:
+                st.metric(
+                    "RGA Donors", 
+                    rga_donors_count,
+                    help="Donors flagged in RGA database"
+                )
+            
+            # Second row of enhanced metrics: Percent in state, Top 3 states
+            col5, col6, col7, col8 = st.columns(4)
+            
+            with col5:
                 if target_state:
                     st.metric(
                         f"% Donors in {target_state}", 
@@ -1905,39 +1941,7 @@ def display_results(results):
                         help=f"Percentage of all donors from {target_state}"
                     )
                 else:
-                    st.metric("% Donors in State", "Set target state", help="Enter target state in sidebar")
-            
-            with col2:
-                st.metric(
-                    "Recurring Donors", 
-                    recurring_donors,
-                    help="Donors who gave 3 or more times"
-                )
-            
-            with col3:
-                st.metric(
-                    "Median Donation", 
-                    f"${median_amount:,.2f}" if median_amount > 0 else "$0.00",
-                    help="Median amount across all contributions"
-                )
-            
-            with col4:
-                max_donors_status = "✅ Under" if len(bad_donors_df) <= max_donors_target else "⚠️ Over"
-                st.metric(
-                    "Max Donors Check", 
-                    f"{max_donors_status} ({len(bad_donors_df)}/{max_donors_target})",
-                    help=f"Total donors vs max threshold of {max_donors_target}"
-                )
-            
-            # Second row of enhanced metrics
-            col5, col6, col7, col8 = st.columns(4)
-            
-            with col5:
-                st.metric(
-                    "RGA Donors", 
-                    rga_donors_count,
-                    help="Donors flagged in RGA database"
-                )
+                    st.metric("% Donors in State", "Set focus state", help="Set geographic focus state in column mapping section")
             
             with col6:
                 if len(top_3_states) >= 1:
@@ -1968,6 +1972,17 @@ def display_results(results):
                     )
                 else:
                     st.metric("3rd State", "N/A")
+            
+            # Additional metrics row
+            st.markdown("#### Additional Analytics")
+            col9, col10, col11, col12 = st.columns(4)
+            
+            with col9:
+                st.metric(
+                    "Recurring Donors", 
+                    recurring_donors,
+                    help="Donors who gave 3 or more times"
+                )
             
             # Donors over time line chart
             if 'date' in bad_donors_df.columns and not bad_donors_df['date'].isna().all():
@@ -2377,6 +2392,16 @@ def main():
                     
                     if geographic_focus_state and geographic_focus_state not in valid_states:
                         st.warning(f"⚠️ '{geographic_focus_state}' is not a valid US state code. Please use standard 2-letter codes like NY, CA, TX, etc.")
+                    
+                    # Target donation amount for max donors analysis
+                    target_donation_amount = st.number_input(
+                        "Target Donation Amount for Max Donors:",
+                        value=2800,
+                        min_value=1,
+                        max_value=10000,
+                        help="Donors within +/- $100 of this amount will be counted as 'Max Donors'",
+                        key="target_donation_amount"
+                    )
                     
                     # Validation
                     required_fields = [first_name_col, last_name_col, state_col, amount_col]
