@@ -139,8 +139,8 @@ def get_viridis_color(amount, min_amount, max_amount):
         '#440154',  # Dark purple (low values)
         '#3b518b',  # Blue
         '#21908c',  # Teal
-        '#5dc863',  # Green  
-        '#fde725'   # Bright yellow (high values)
+        '#f97306',  # Bright orange  
+        '#e31a1c'   # Strong red (high values)
     ]
     
     # Find which segment the normalized value falls into
@@ -1466,7 +1466,7 @@ def create_folium_state_map(zip_data_df, filer_state):
         
         # Create Viridis-style LinearColormap for markers (no legend)
         colormap = cm.LinearColormap(
-            colors=['#440154', '#3b518b', '#21908c', '#5dc863', '#fde725'],
+            colors=['#440154', '#3b518b', '#21908c', '#f97306', '#e31a1c'],
             vmin=min_amount,
             vmax=max_amount
         )
