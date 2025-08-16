@@ -2,6 +2,7 @@ import pandas as pd
 import sqlite3
 import re
 from difflib import SequenceMatcher
+from functools import lru_cache
 from database import get_connection
 
 class FECDataProcessor:
@@ -13,6 +14,8 @@ class FECDataProcessor:
             'rga_donors': True,
             'bad_employers': True
         }
+        # Pre-compute normalized industry names for performance
+        self.normalized_industry_names = self._precompute_industry_names()
         
         # FEC column name mappings to internal format
         self.fec_column_mapping = {
@@ -58,6 +61,29 @@ class FECDataProcessor:
         name = ' '.join(name.split())
         
         return name
+    
+    def _precompute_industry_names(self):
+        """Pre-compute normalized industry names for performance optimization"""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute('SELECT committee_name, larger_categories FROM industries WHERE committee_name IS NOT NULL AND committee_name != ""')
+            industry_data = cursor.fetchall()
+            
+            normalized_cache = {}
+            for committee_name, category in industry_data:
+                if committee_name:
+                    clean_name = committee_name.strip().upper()
+                    normalized_name = self.normalize_committee_name(committee_name)
+                    normalized_cache[committee_name] = {
+                        'clean': clean_name,
+                        'normalized': normalized_name,
+                        'category': category
+                    }
+            
+            return normalized_cache
+        except Exception:
+            # Return empty cache if database access fails
+            return {}
     
     def detect_and_map_columns(self, df):
         """
@@ -546,34 +572,22 @@ class FECDataProcessor:
         result = cursor.fetchone()
         return result[0] if result else None
     
-    def check_industry_by_name_fuzzy(self, committee_name, threshold=87):
-        """Check Industry classification by Committee Name using fuzzy matching with high certainty"""
-        if not committee_name or not committee_name.strip():
+    @lru_cache(maxsize=1000)
+    def _cached_fuzzy_match(self, committee_name_clean, committee_name_normalized, threshold=87):
+        """Cached fuzzy matching helper using pre-computed normalized names for performance"""
+        # Use pre-computed normalized industry names instead of database query
+        if not self.normalized_industry_names:
             return None
-            
-        cursor = self.conn.cursor()
-        
-        # Get all committee names from industry database
-        cursor.execute('SELECT committee_name, larger_categories FROM industries WHERE committee_name IS NOT NULL AND committee_name != ""')
-        all_industry_committees = cursor.fetchall()
-        
-        if not all_industry_committees:
-            return None
-        
-        committee_name_clean = committee_name.strip().upper()
-        committee_name_normalized = self.normalize_committee_name(committee_name)
         
         best_match = None
         best_score = 0
         best_category = None
         best_approach = None
         
-        for db_name, category in all_industry_committees:
-            if not db_name:
-                continue
-                
-            db_name_clean = db_name.strip().upper()
-            db_name_normalized = self.normalize_committee_name(db_name)
+        for db_name, data in self.normalized_industry_names.items():
+            db_name_clean = data['clean']
+            db_name_normalized = data['normalized']
+            category = data['category']
             
             # Test 1: Original similarity
             original_similarity = SequenceMatcher(None, committee_name_clean, db_name_clean).ratio() * 100
@@ -621,6 +635,17 @@ class FECDataProcessor:
             }
         
         return None
+    
+    def check_industry_by_name_fuzzy(self, committee_name, threshold=87):
+        """Check Industry classification by Committee Name using fuzzy matching with high certainty"""
+        if not committee_name or not committee_name.strip():
+            return None
+            
+        committee_name_clean = committee_name.strip().upper()
+        committee_name_normalized = self.normalize_committee_name(committee_name)
+        
+        # Use cached helper function for performance
+        return self._cached_fuzzy_match(committee_name_clean, committee_name_normalized, threshold)
     
     def check_industry_by_name(self, committee_name):
         """Check Industry classification by Committee Name (legacy exact/partial matching)"""
@@ -699,12 +724,89 @@ class FECDataProcessor:
         result = cursor.fetchone()
         return result[0] if result else None
     
+    def batch_lookup_bad_donors(self, full_keys, name_keys):
+        """Batch lookup bad donors for performance optimization"""
+        cursor = self.conn.cursor()
+        results = {}
+        
+        if full_keys:
+            # Batch lookup full keys (high confidence)
+            placeholders = ','.join(['?' for _ in full_keys])
+            cursor.execute(f'SELECT full_key, affiliation FROM bad_donors WHERE full_key IN ({placeholders})', full_keys)
+            for full_key, affiliation in cursor.fetchall():
+                results[full_key] = {'confidence': 'HIGH', 'affiliation': affiliation[:200]}
+        
+        if name_keys:
+            # Batch lookup name keys (medium confidence) for those without high confidence match
+            remaining_name_keys = [nk for nk in name_keys if nk not in [fk.replace('_' + fk.split('_')[-1], '') for fk in results.keys()]]
+            if remaining_name_keys:
+                placeholders = ','.join(['?' for _ in remaining_name_keys])
+                cursor.execute(f'SELECT name_key, affiliation FROM bad_donors WHERE name_key IN ({placeholders})', remaining_name_keys)
+                for name_key, affiliation in cursor.fetchall():
+                    if name_key not in [fk.replace('_' + fk.split('_')[-1], '') for fk in results.keys()]:
+                        results[name_key] = {'confidence': 'MEDIUM', 'affiliation': affiliation[:200]}
+        
+        return results
+    
+    def batch_lookup_employers(self, employers):
+        """Batch lookup bad employers for performance optimization"""
+        if not employers:
+            return {}
+            
+        cursor = self.conn.cursor()
+        upper_employers = [emp.upper() for emp in employers]
+        placeholders = ','.join(['?' for _ in upper_employers])
+        cursor.execute(f'SELECT UPPER(name), flag FROM bad_employers WHERE UPPER(name) IN ({placeholders})', upper_employers)
+        
+        return {name: flag for name, flag in cursor.fetchall()}
+    
+    def batch_lookup_committees(self, committee_ids):
+        """Batch lookup committee data from multiple tables for performance optimization"""
+        if not committee_ids:
+            return {}
+            
+        cursor = self.conn.cursor()
+        results = {}
+        placeholders = ','.join(['?' for _ in committee_ids])
+        
+        # Batch lookup bad groups
+        cursor.execute(f'SELECT committee_id, flag FROM bad_groups WHERE committee_id IN ({placeholders})', committee_ids)
+        for cid, flag in cursor.fetchall():
+            if cid not in results:
+                results[cid] = {}
+            results[cid]['bad_group'] = flag
+        
+        # Batch lookup industries
+        cursor.execute(f'SELECT committee_id, larger_categories FROM industries WHERE committee_id IN ({placeholders})', committee_ids)
+        for cid, category in cursor.fetchall():
+            if cid not in results:
+                results[cid] = {}
+            results[cid]['industry'] = category
+            
+        # Batch lookup LPAC
+        cursor.execute(f'SELECT committee_id, pac_sponsor_district FROM lpac WHERE committee_id IN ({placeholders})', committee_ids)
+        for cid, district in cursor.fetchall():
+            if cid not in results:
+                results[cid] = {}
+            results[cid]['lpac'] = district
+            
+        # Batch lookup bad legislation
+        cursor.execute(f'SELECT committee_id, associated_candidate FROM bad_legislation WHERE committee_id IN ({placeholders})', committee_ids)
+        for cid, candidate in cursor.fetchall():
+            if cid not in results:
+                results[cid] = {}
+            results[cid]['bad_legislation'] = candidate
+        
+        return results
+    
     def extract_filer_info(self, df):
         """Extract filer state, district, and financial data from F3N row (row 2)"""
         try:
-            # Look for F3N row (usually row 2, but search to be safe)
+            # Look for F3N row in first 5 rows (F3N is always at the top)
             f3n_row = None
-            for _, row in df.iterrows():
+            search_rows = min(5, len(df))  # Only check first 5 rows for performance
+            for i in range(search_rows):
+                row = df.iloc[i]
                 # Try column 'A' first (Excel format), then position 0 (CSV format)
                 first_col_value = str(row.get('A', row.iloc[0] if len(row) > 0 else '')).strip().upper()
                 if first_col_value.startswith('F3N'):
